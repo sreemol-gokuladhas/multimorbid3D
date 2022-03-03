@@ -12,6 +12,7 @@ dependencies:
     - tqdm=4.48.0
     - requests
     - multiprocess
+    - sqlalchemy
     #- rpy2=3.4.5
     #- r-essentials=3.6.0
     #- networkx=2.6.2
