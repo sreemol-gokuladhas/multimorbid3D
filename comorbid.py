@@ -75,6 +75,11 @@ def parse_args():
         '-o', '--output-dir', required=True,
         help='Directory to write results.')
     parser.add_argument(
+        '--non-spatial', action='store_true', default=False,
+        help='Include non-spatial eQTLs.')
+    parser.add_argument(
+        '--non-spatial-dir', default='data/GTEx/', help='Filepath to non-spatial eQTLs.')
+    parser.add_argument(
         '-l', '--levels', default=1, type=int,
         help='Path length (i.e. number of nodes) to query. Default: 1')
     parser.add_argument(

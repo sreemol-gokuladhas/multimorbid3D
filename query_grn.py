@@ -25,6 +25,13 @@ def parse_gwas(gwas_fp):
     df['SNPS'] = df['SNPS'].str.strip()
     return df
 
+def parse_snp_input(snp_fp):
+    if os.path.isfile(snp_fp[0]):
+        df = pd.read_csv(snp_fp[0], sep='\t', header=None, names=['snp'])
+        return df[df['snp'] != "snp"]['snp'].drop_duplicates().tolist()
+    else:
+        return list(set(snp_fp))
+    
 def clean_snp_ids(snp_id):
     try:
         return f"rs{int(snp_id)}"
@@ -51,8 +58,11 @@ def parse_grn(grn_dir):
         grn.append(chrom_eqtls)
     return pd.concat(grn)
     
-def get_eqtls(snps, grn, output_dir):
+def get_eqtls(snps, grn, output_dir, non_spatial, non_spatial_dir):
     eqtls = grn[grn['snp'].isin(snps)]
+    if non_spatial:
+        tissue = grn.iloc[0, 'tissue']
+        
     if len(eqtls) > 0:
         return eqtls
     else:
@@ -60,6 +70,12 @@ def get_eqtls(snps, grn, output_dir):
 
     write_results(eqtls, 'query_eqtls.txt', output_dir)        
 
+def get_non_spatial_eqtls(snps, tissue, non_spatial_dir):
+    cis_dir = os.path.join(non_spatial_dir, 'GTEx_Analysis_v8_eQTL')
+    tissue_fp = [fp for fp in os.listdir(cis_dir) 
+               if fp.endswith('gene_pairs.txt.gz') and
+               fp.split('.')[0] == tissue]
+    
 def write_results(res, fp, out):
     print(f'\tWriting {fp}...')
     os.makedirs(out, exist_ok=True)
@@ -89,6 +105,11 @@ def parse_args():
     parser.add_argument(
         '-o', '--output-dir', required=True, help='Directory to write results.')
     parser.add_argument(
+        '--non-spatial', action='store_true', default=False,
+        help='Include non-spatial eQTLs.')
+    parser.add_argument(
+        '--non-spatial-dir', default='data/GTEx/', help='Filepath to non-spatial eQTLs.')
+    parser.add_argument(
         '-g', '--gwas', default=None,
         help='''Filepath to GWAS associations. 
         Default: Associations from the GWAS Catalog 
@@ -106,7 +127,9 @@ if __name__=='__main__':
     print(snps)
     if args.trait:
         snps = extract_trait_snps(args.trait, gwas)
-    if args.pmid:
+    elif args.pmid:
         snps = extract_pmid_snps(args.pmid, gwas)
+    else:
+        snps = parse_snp_input(args.snps)
     grn = parse_grn(args.grn_dir)
-    eqtls = get_eqtls(snps, grn, args.output_dir)
+    eqtls = get_eqtls(snps, grn, args.output_dir, args.non_spatial, args.non_spatial_dir)
