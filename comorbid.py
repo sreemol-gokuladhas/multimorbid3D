@@ -75,11 +75,6 @@ def parse_args():
         '-o', '--output-dir', required=True,
         help='Directory to write results.')
     parser.add_argument(
-        '--non-spatial', action='store_true', default=False,
-        help='Include non-spatial eQTLs.')
-    parser.add_argument(
-        '--non-spatial-dir', default='data/GTEx/', help='Filepath to non-spatial eQTLs.')
-    parser.add_argument(
         '-l', '--levels', default=1, type=int,
         help='Path length (i.e. number of nodes) to query. Default: 1')
     parser.add_argument(
@@ -91,10 +86,34 @@ def parse_args():
     parser.add_argument(
         '--bootstraps', default=1000, type=int,
         help='Number of bootstrap datasets. Default: 1000')
-
+    parser.add_argument(
+        '--non-spatial', action='store_true', default=False,
+        help='Include non-spatial eQTLs.')
+    parser.add_argument(
+        '--non-spatial-dir', default='data/GTEx/', help='Filepath to non-spatial eQTLs.')
+    parser.add_argument(
+        '--snp-ref-dir', default='data/snps/', help='Filepath to SNP BED databases.')
+    parser.add_argument(
+        '--gene-ref-dir', default='data/genes/', help='Filepath to gene BED.')
+    parser.add_argument(
+        '--ld', action='store_true', default=False,
+        help='Include LD SNPs in identifying eQTLs and GWAS traits.')
+    parser.add_argument(
+        '-c', '--correlation-threshold', default=0.8, type=int,
+        help='The r-squared correlation threshold to use.')
+    parser.add_argument(
+        '-w', '--window', default=5000, type=int,
+        help='The genomic window (+ or - in bases) within which proxies are searched.')
+    parser.add_argument('-p', '--population', default='EUR',
+                        choices=['EUR'],
+                        help='The ancestral population in which the LD is calculated')
+    parser.add_argument('--ld-dir', default='data/ld/dbs/super_pop/',
+                        help='Directory containing LD database.')
     return parser.parse_args()
 
-def parse_snps(snp_arg, trait_arg, pmid_arg, gwas, grn, output_dir):
+def parse_snps(snp_arg, trait_arg, pmid_arg, gwas, grn, output_dir,
+               non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
+               ld, corr_thresh, window, population, ld_dir):
     if (snp_arg and trait_arg) or (snp_arg and pmid_arg) or (trait_arg and pmid_arg):
         sys.exit('Only one of --snps, --trait, or --pmid is required.\nExiting.')
     snps = pd.DataFrame()
@@ -110,8 +129,9 @@ def parse_snps(snp_arg, trait_arg, pmid_arg, gwas, grn, output_dir):
         snps = query_grn.extract_trait_snps(trait_arg, gwas)
     elif pmid_arg:
         snps = query_grn.extract_pmid_snps(pmid_arg, gwas)
-    eqtls = query_grn.get_eqtls(snps, grn, output_dir)
-    
+    eqtls = query_grn.get_eqtls(snps, grn, output_dir,
+                                non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
+                                ld, corr_thresh, window, population, ld_dir)
     return snps, eqtls
 
 def parse_genes(genes_args):
@@ -223,10 +243,11 @@ if __name__=='__main__':
     if args.genes:
         genes = parse_genes(args.genes)
     else:
-        snps, genes = parse_snps(args.snps, args.trait, args.pmid, gwas, grn, args.output_dir)
-
+        snps, genes = parse_snps(args.snps, args.trait, args.pmid, gwas, grn, args.output_dir,
+                                 args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir,
+        args.ld, args.correlation_threshold, args.window, args.population, args.ld_dir)
     sig_res = pipeline(genes, gwas, args.output_dir,  args)
-    
+    sys.exit()
     # Bootstrap
     #if args.genes:
     bootstrap_genes(sig_res, genes, gwas, args.bootstraps, grn, args)

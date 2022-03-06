@@ -45,12 +45,9 @@ def ld_proxy_chrom(chrom, query_snps, chrom_dict, corr_thresh, window, pop, ld_d
            )
     chrom_dict[chrom] = snps[['chromq',	'posq', 'rsidq', 'chromt', 'post', 'rsidt', 'corr','dprime']]
 
-def ld_proxy(query_snps, args):
-    corr_thresh = args.correlation_threshold
-    window = args.window
-    pop = args.population
-    ld_dir = os.path.join(args.ld_dir, pop)
-    start_time = time()
+def ld_proxy(query_snps, corr_thresh, window, pop, ld_dir):
+    ld_dir = os.path.join(ld_dir, pop)
+
     chrom_list = [fp.split('.')[0] for fp in os.listdir(ld_dir) if fp.startswith('chr')]
     manager = mp.Manager()
     chrom_dict = manager.dict()
@@ -80,8 +77,6 @@ def ld_proxy(query_snps, args):
                        })
     df = (pd.concat([df, query_snps_df])
              .sort_values(by=['rsidq', 'corr', 'dprime'], ascending=False))
-    print('Total time elasped: {:.2f} mins.'.format(
-        (time()-start_time)/60))
     return df
 
 def write_results(df, out):
@@ -113,9 +108,12 @@ def parse_args():
 
 
 if __name__=='__main__':
+    start_time = time()
     args = parse_args()
     snps = parse_snps(args.snps)
-    print(snps)
-    df = ld_proxy(snps['snp'].tolist(), args)
-    print(df)
+    df = ld_proxy(snps['snp'].tolist(), args.correlation_threshold,
+                  args.window, args.population, args.ld_dir)
+    write_results(df, args.output)
+    print('Total time elasped: {:.2f} mins.'.format(
+        (time()-start_time)/60))
 

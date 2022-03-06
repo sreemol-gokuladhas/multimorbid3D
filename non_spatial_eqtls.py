@@ -29,18 +29,15 @@ def get_eqtls(snps, tissue, output_dir, non_spatial_dir, snp_ref_dir, gene_ref_d
             write_file(pd.DataFrame({'failed_snps': failed}),
                        os.path.join(output_dir, 'failed_snps.txt'))
             print(f'''WARNING: {len(failed)} SNPs could not be found in the SNP database.''')
-    snp_df['end'] = snp_df['start'] + 1
-    snp_df['id'] = 'chr' + snp_df['chrom'].astype(str) + '_' + snp_df['end'].astype(str)
-    snp_df = snp_df.rename(columns={'chrom': 'snp_chrom',
-                                    'start': 'snp_start',
-                                    'end': 'snp_end'})
+    snp_df['snp_locus'] = snp_df['start'] + 1
+    snp_df['id'] = 'chr' + snp_df['chrom'].astype(str) + '_' + snp_df['snp_locus'].astype(str)
+    snp_df = snp_df.rename(columns={'chrom': 'snp_chr',
+                                    'rsid': 'snp'})
     cis_eqtls = get_cis_eqtls(snp_df, tissue, non_spatial_dir, gene_ref_dir)
     trans_eqtls = get_trans_eqtls(snp_df, tissue, non_spatial_dir, gene_ref_dir)
     eqtls = pd.concat([cis_eqtls, trans_eqtls])
-    print(eqtls)
     if len(eqtls) == 0:
         sys.exit('No eQTLs found in the gene regulatory map.')
-    print(output_dir)
     write_file(eqtls, os.path.join(output_dir, 'non_spatial_eqtls.txt'))        
     return eqtls
 
@@ -48,9 +45,9 @@ def get_trans_eqtls(snps, tissue, non_spatial_dir, gene_ref_dir):
     fp = os.path.join(non_spatial_dir, 'GTEx_Analysis_v8_trans_eGenes_fdr05.txt')
     chunk_size = 200000
     res = []
-    cols = ['variant_id', 'rsid', 'gene_id', 'gene', 'tissue', 'interaction_type', 'eqtl_type',
+    cols = ['variant_id', 'snp', 'gencode_id', 'gene', 'tissue', 'interaction_type', 'eqtl_type',
             'tss_distance', 'maf', 'pval_nominal','slope', 'slope_se',
-            'gene_chrom', 'gene_start', 'gene_end', 'snp_chrom', 'snp_start', 'snp_end']
+            'gene_chr', 'gene_start', 'gene_end', 'snp_chr', 'snp_locus']
     for df in pd.read_csv(fp, sep='\t', chunksize=chunk_size):
         df['id'] = df['variant_id'].apply(lambda x: '_'.join(x.split('_')[:2]))
         df = df.rename(columns = {'tissue_id': 'tissue',
@@ -60,12 +57,13 @@ def get_trans_eqtls(snps, tissue, non_spatial_dir, gene_ref_dir):
     if len(res) == 0:
         return
     res = pd.concat(res)
+    res = res.rename(columns={'gene_id': 'gencode_id'})
     res = res.merge(snps, how='left', on='id')
     gene_ref = pd.read_csv(f'{gene_ref_dir}gene_reference.bed', sep='\t', header=None,
-                           names=['gene_chrom', 'gene_start', 'gene_end', 'gene', 'gene_id'])
-    res = res.merge(gene_ref, how='left', on=['gene','gene_id'])
+                           names=['gene_chr', 'gene_start', 'gene_end', 'gene', 'gencode_id'])
+    res = res.merge(gene_ref, how='left', on=['gene','gencode_id', 'gene_chr'])
     res['interaction_type'] = 'Trans-intrachromosomal'
-    res.loc[res['gene_chrom'] != res['snp_chrom'], 'interaction_type'] = 'Trans-interchromosomal'
+    res.loc[res['gene_chr'] != res['snp_chr'], 'interaction_type'] = 'Trans-interchromosomal'
     res['eqtl_type'] = 'non_spatial'
     res['tss_distance'] = -1
     return res[cols]
@@ -77,9 +75,9 @@ def get_cis_eqtls(snps, tissue, non_spatial_dir, gene_ref_dir):
                fp.split('.')[0] == tissue][0]
     chunk_size = 200000
     res = []
-    cols = ['variant_id', 'rsid', 'gene_id', 'gene', 'tissue', 'interaction_type', 'eqtl_type',
+    cols = ['variant_id', 'snp', 'gencode_id', 'gene', 'tissue', 'interaction_type', 'eqtl_type',
             'tss_distance', 'maf', 'pval_nominal','slope', 'slope_se',
-            'gene_chrom', 'gene_start', 'gene_end', 'snp_chrom', 'snp_start', 'snp_end']
+            'gene_chr', 'gene_start', 'gene_end', 'snp_chr', 'snp_locus']
     for df in pd.read_csv(f'{cis_dir}/{tissue_fp}', sep='\t',
                           chunksize=chunk_size, compression='gzip'):
         df['id'] = df['variant_id'].apply(lambda x: '_'.join(x.split('_')[:2]))
@@ -87,10 +85,11 @@ def get_cis_eqtls(snps, tissue, non_spatial_dir, gene_ref_dir):
     if len(res) == 0:
         return
     res = pd.concat(res)
+    res = res.rename(columns={'gene_id': 'gencode_id'})
     res = res.merge(snps, how='left', on='id')
     gene_ref = pd.read_csv(f'{gene_ref_dir}gene_reference.bed', sep='\t', header=None,
-                           names=['gene_chrom', 'gene_start', 'gene_end', 'gene', 'gene_id'])
-    res = res.merge(gene_ref, how='left', on='gene_id')
+                           names=['gene_chr', 'gene_start', 'gene_end', 'gene', 'gencode_id'])
+    res = res.merge(gene_ref, how='left', on='gencode_id')
     res['tissue'] = tissue
     res['interaction_type'] = 'Cis'
     res['eqtl_type'] = 'non_spatial'

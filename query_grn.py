@@ -8,6 +8,9 @@ from scipy.stats import hypergeom
 import statsmodels.stats.multitest as mt
 from tqdm import tqdm
 
+import non_spatial_eqtls
+import ld_proxy
+
 def parse_gwas(gwas_fp):
     print('Parsing GWAS associations...')
     cols = ['SNPS', 'SNP_ID_CURRENT', 'DISEASE/TRAIT', 'PUBMEDID',
@@ -58,28 +61,31 @@ def parse_grn(grn_dir):
         grn.append(chrom_eqtls)
     return pd.concat(grn)
     
-def get_eqtls(snps, grn, output_dir, non_spatial, non_spatial_dir):
-    eqtls = grn[grn['snp'].isin(snps)]
+def get_eqtls(snps, grn, output_dir, non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
+ld, corr_thresh, window, population, ld_dir):
+    if ld:
+        ld_snps = ld_proxy.ld_proxy(snps, corr_thresh, window, population, ld_dir)
+        snps = ld_snps['rsidt'].drop_duplicates()
+        write_results(ld_snps, os.path.join(output_dir, 'query_snp_ld.txt'))
+    constrained_eqtls = grn[grn['snp'].isin(snps)]
+    cols = cols = ['snp', 'gene', 'gencode_id', 'tissue', 'interaction_type',
+                   'eqtl_type','gene_chr', 'gene_start', 'gene_end', 'snp_chr', 'snp_locus']
     if non_spatial:
-        tissue = grn.iloc[0, 'tissue']
-        
-    if len(eqtls) > 0:
-        return eqtls
-    else:
+        tissue = grn['tissue'].drop_duplicates()[0]
+        unconstrained_eqtls = non_spatial_eqtls.get_eqtls(snps, tissue, output_dir, non_spatial_dir,
+                                                        snp_ref_dir, gene_ref_dir)
+    if len(constrained_eqtls) > 0:
+        constrained_eqtls['eqtl_type'] = 'spatial'
+    eqtls = pd.concat([constrained_eqtls, unconstrained_eqtls])
+    if len(eqtls) == 0:
         sys.exit('No eQTLs found in the gene regulatory map.')
+    write_results(eqtls, os.path.join(output_dir, 'query_eqtls.txt'))
+    return eqtls
 
-    write_results(eqtls, 'query_eqtls.txt', output_dir)        
-
-def get_non_spatial_eqtls(snps, tissue, non_spatial_dir):
-    cis_dir = os.path.join(non_spatial_dir, 'GTEx_Analysis_v8_eQTL')
-    tissue_fp = [fp for fp in os.listdir(cis_dir) 
-               if fp.endswith('gene_pairs.txt.gz') and
-               fp.split('.')[0] == tissue]
-    
-def write_results(res, fp, out):
-    print(f'\tWriting {fp}...')
-    os.makedirs(out, exist_ok=True)
-    res.to_csv(os.path.join(out, fp), sep='\t', index=False)
+def write_results(res, fp):
+    output_dir = os.path.dirname(fp)
+    os.makedirs(output_dir, exist_ok=True)
+    res.to_csv(fp, sep='\t', index=False)
 
         
 def parse_args():
@@ -114,7 +120,10 @@ def parse_args():
         help='''Filepath to GWAS associations. 
         Default: Associations from the GWAS Catalog 
         (https://www.ebi.ac.uk/gwas/api/search/downloads/full) ''')
-
+    parser.add_argument(
+        '--snp-ref-dir', default='data/snps/', help='Filepath to SNP BED databases.')
+    parser.add_argument(
+        '--gene-ref-dir', default='data/genes/', help='Filepath to gene BED.')
     return parser.parse_args()
 
 
@@ -132,4 +141,6 @@ if __name__=='__main__':
     else:
         snps = parse_snp_input(args.snps)
     grn = parse_grn(args.grn_dir)
-    eqtls = get_eqtls(snps, grn, args.output_dir, args.non_spatial, args.non_spatial_dir)
+    eqtls = get_eqtls(snps, grn, args.output_dir, args.non_spatial, args.non_spatial_dir,
+                      args.snp_ref_dir, args.gene_ref_dir)
+    
