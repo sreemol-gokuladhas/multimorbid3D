@@ -106,7 +106,7 @@ def parse_args():
         help='The genomic window (+ or - in bases) within which proxies are searched.')
     parser.add_argument('-p', '--population', default='EUR',
                         choices=['EUR'],
-                        help='The ancestral population in which the LD is calculated')
+                        help='The ancestral population in which the LD is calculated.')
     parser.add_argument('--ld-dir', default='data/ld/dbs/super_pop/',
                         help='Directory containing LD database.')
     return parser.parse_args()
@@ -151,28 +151,34 @@ def join_path(*args):
         fp = os.path.join(fp, arg)
     return fp
 
-def pipeline(genes, gwas, output_dir, args):
+def pipeline(genes, gwas, output_dir, args, bootstrap=False):
     # PPIN
-    ppin = []
+    gene_list = []
+    graph = pd.DataFrame()
     if args.ppin == 'string':
-        ppin = query_string.query_string(
+        gene_list, graph = query_string.query_string(
             genes, args.levels, args.string_score, join_path(output_dir, 'ppin.txt'))
     else:
-        ppin = query_proper.query_proper(
+        gene_list, graph = query_proper.query_proper(
             genes, args.levels, join_path(output_dir, 'ppin.txt'))
-
+    if graph.empty:
+        return pd.DataFrame()
     # PPIN eQTLs
-    ppin_eqtls = get_ppi_eqtls.get_snps(ppin, args.grn_dir, output_dir)
-    
+    ppin_eqtls = query_grn.get_gene_eqtls(
+        gene_list, grn, args.output_dir,
+        args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir,
+        bootstrap=bootstrap)
     # Traits
-    sig_res = find_snp_disease.find_disease(gwas, output_dir, output_dir)
+    sig_res = find_snp_disease.find_disease(
+        gwas, output_dir, output_dir, args.ld, args.correlation_threshold,
+        args.window, args.population, args.ld_dir, bootstrap=bootstrap)
     return sig_res
 
 def prep_bootstrap(sim, gene_num, sims_dir, res_dict, grn_genes, gwas, args):
     sim_output_dir = join_path(sims_dir, sim)
     sim_genes = pd.DataFrame(
         {'gene': grn_genes.sample(gene_num, random_state=int(sim)).tolist()})
-    sim_res = pipeline(sim_genes, gwas, sim_output_dir, args)
+    sim_res = pipeline(sim_genes, gwas, sim_output_dir, args, bootstrap=True)
     if sim_res is None:
         return
     for i, row in sim_res.iterrows():
@@ -194,6 +200,19 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
     desc = 'Boostrapping'
     bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
     sims = [str(i) for i in range(num_sims)]
+    '''
+    for sim in sims:
+        print(sim)
+        prep_bootstrap(
+            sim, gene_num, sims_dir, res_dict,
+            grn['gene'].drop_duplicates(), gwas, args)
+    if args.ld or args.non_spatial:
+        for sim in sims:
+            prep_bootstrap(
+                sim, gene_num, sims_dir, res_dict,
+                grn['gene'].drop_duplicates(), gwas, args)
+    else:
+    '''    
     with mp.Pool(16) as pool:
         for _  in tqdm(
                 pool.istarmap(
@@ -205,8 +224,7 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
                         repeat(res_dict),
                         repeat(grn['gene'].drop_duplicates()),
                         repeat(gwas),
-                        repeat(args)
-                    )
+                        repeat(args))
                 ),
                 total=len(sims), desc=desc, bar_format=bar_format,
                 unit='simulations', ncols=80
@@ -216,6 +234,9 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
     for k in res_dict:
         ks = k.split('__')
         sim_df.append([ks[0], ks[1], res_dict[k]])
+    if len(sim_df) == 0:
+        print('Warning: No output for simulations.')
+        return
     sim_df = pd.DataFrame(sim_df, columns=['level', 'trait', 'sim_count'])
     # Using (count + 1) / (num_sims +1) See https://doi.org/10.1086/341527
     sim_df['sim_pval'] = (sim_df['sim_count'] + 1) / (num_sims + 1)
@@ -247,7 +268,8 @@ if __name__=='__main__':
                                  args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir,
         args.ld, args.correlation_threshold, args.window, args.population, args.ld_dir)
     sig_res = pipeline(genes, gwas, args.output_dir,  args)
-    sys.exit()
+    if sig_res.empty:
+        sys.exit('Exiting: No results found.')
     # Bootstrap
     #if args.genes:
     bootstrap_genes(sig_res, genes, gwas, args.bootstraps, grn, args)

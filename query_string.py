@@ -47,6 +47,8 @@ def get_string_interaction_partners(genes, score_cutoff, level):
         df = df[['stringId_A', 'stringId_B', 'preferredName_A', 'preferredName_B', 'score']]
         df = df[df.score >= score_cutoff]
         interactions.append(df)
+    if len(interactions) == 0:
+        return
     interactions = pd.concat(interactions)
     interactions = interactions.rename(columns={
         'stringId_A': f'id_{level}',
@@ -57,19 +59,50 @@ def get_string_interaction_partners(genes, score_cutoff, level):
     return interactions
 
 def query_string(gene_df, levels, score, output_fp):
+    string_version = 'https://string-db.org/api/json/version'
+    # TODO: Log STRING version
     ids_df = get_string_id(gene_df['gene'].tolist())
+    gene_list = [gene_df['gene'].drop_duplicates().tolist()]
+    graph = []
     df = get_string_interaction_partners(ids_df['stringId'].tolist(), score, 0)
+    if df is None or df.empty:
+        #sys.exit('EXIT No PPIN found for gene list.')
+        return gene_list, pd.DataFrame()
+    df['token'] = df.apply(lambda row: ''.join(sorted((row['level0'], row['level1']))), axis=1)
+    df = df.drop_duplicates('token').drop(columns=['token'])
+    gene_list.append(df[~df['level1'].isin(gene_list[0])]['level1'].drop_duplicates().tolist())
+    graph.append((df[['level0', 'level1', 'score_0']].drop_duplicates()
+                  .rename(columns={'level0': 'geneA',
+                                   'level1': 'geneB',
+                                   'score_0': 'score'})
+                  .assign(level = '0')))
     #print('Querying STRINGdb for interactions between...')
     for level in range(1, levels):
-        #print(f'\tLevels {level-1} and {level}')
         level_df = get_string_interaction_partners(
             df[f'id_{level}'].drop_duplicates().tolist(), score, level)
+        if level_df is None or level_df.empty:
+            break
+        level_df['token'] = level_df.apply(
+            lambda row: ''.join(sorted((row[f'level{level}'], row[f'level{level+1}']))), axis=1)
+        level_df = level_df.drop_duplicates('token').drop(columns='token')
+        for i in range(level + 1):
+            level_df = level_df[~(level_df[f'level{level + 1}'].isin(gene_list[i]))]# == df[f'id_{i}'])]
+        graph.append((level_df[[f'level{level}', f'level{level + 1}', f'score_{level}']]
+                      .rename(columns={f'level{level}': 'geneA',
+                                       f'level{level+1}': 'geneB',
+                                       f'score_{level}': 'score'})
+                      .assign(level = f'{level}')))
+        gene_list.append(level_df[f'level{level + 1}'].drop_duplicates().tolist())
         df = df.merge(level_df, how='right', on=[f'level{level}', f'id_{level}'])
-        for i in range(level):
-            df = df[~(df[f'id_{level + 1}'] == df[f'id_{i}'])]
     df = df.drop_duplicates()
-    write_results(df, output_fp)
-    return df
+    graph = pd.concat(graph)
+    for level in range(len(gene_list)):
+        write_results(pd.DataFrame({'gene': gene_list[level]}),
+                      os.path.join(os.path.dirname(output_fp), f'level{level}_genes.txt'))
+    write_results(graph.drop_duplicates(),
+                  os.path.join(os.path.dirname(output_fp), 'graph.txt'))
+    #write_results(df.drop_duplicates(), output_fp)
+    return gene_list, graph
 
 
 def write_results(df, output_fp):
@@ -118,7 +151,7 @@ if __name__=='__main__':
     start_time = time.time()
     args = parse_args()
     gene_df = parse_input(args.input)
-    df = query_string(gene_df, args.levels, args.score, args.output)
+    genes, graph = query_string(gene_df, args.levels, args.score, args.output)
 
     #print('Done.')
     #print(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')

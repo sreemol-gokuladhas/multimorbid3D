@@ -55,32 +55,63 @@ def extract_pmid_snps(pmid, gwas):
 def parse_grn(grn_dir):
     print('Parsing tissue gene regulatory map...')
     grn = []
-    for chrom in os.listdir(grn_dir):
+    chrom_dirs =  [d for d in os.listdir(grn_dir) if not d.endswith('.log')]
+    for chrom in chrom_dirs:
         chrom_eqtls = pd.read_csv(
             os.path.join(grn_dir, chrom, 'significant_eqtls.txt'), sep='\t')
         grn.append(chrom_eqtls)
     return pd.concat(grn)
     
-def get_eqtls(snps, grn, output_dir, non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
-ld, corr_thresh, window, population, ld_dir):
+def get_eqtls(snps, grn, output_dir,
+              non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
+              ld, corr_thresh, window, population, ld_dir):
     if ld:
         ld_snps = ld_proxy.ld_proxy(snps, corr_thresh, window, population, ld_dir)
         snps = ld_snps['rsidt'].drop_duplicates()
         write_results(ld_snps, os.path.join(output_dir, 'query_snp_ld.txt'))
     constrained_eqtls = grn[grn['snp'].isin(snps)]
+    unconstrained_eqtls = pd.DataFrame()
     cols = cols = ['snp', 'gene', 'gencode_id', 'tissue', 'interaction_type',
                    'eqtl_type','gene_chr', 'gene_start', 'gene_end', 'snp_chr', 'snp_locus']
     if non_spatial:
         tissue = grn['tissue'].drop_duplicates()[0]
-        unconstrained_eqtls = non_spatial_eqtls.get_eqtls(snps, tissue, output_dir, non_spatial_dir,
-                                                        snp_ref_dir, gene_ref_dir)
+        unconstrained_eqtls = non_spatial_eqtls.get_eqtls(
+            snps, tissue, output_dir, non_spatial_dir,
+            snp_ref_dir, gene_ref_dir)
     if len(constrained_eqtls) > 0:
         constrained_eqtls['eqtl_type'] = 'spatial'
     eqtls = pd.concat([constrained_eqtls, unconstrained_eqtls])
-    if len(eqtls) == 0:
-        sys.exit('No eQTLs found in the gene regulatory map.')
-    write_results(eqtls, os.path.join(output_dir, 'query_eqtls.txt'))
+    if eqtls.empty:
+        #sys.exit('No eQTLs found in the gene regulatory map.')
+        return pd.DataFrame()
+    write_results(eqtls.drop_duplicates(), os.path.join(output_dir, 'query_eqtls.txt'))
     return eqtls
+
+def get_gene_eqtls(gene_list, grn, output_dir,
+                   non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir, bootstrap=False):
+    #print('Identifying gene eQTLs...')
+    for level in range(len(gene_list)):
+        constrained_eqtls = (
+            grn[grn['gene'].isin(gene_list[level])][['snp', 'gene']]
+            .drop_duplicates()
+            .assign(eqtl_type = 'spatial'))
+        unconstrained_eqtls = pd.DataFrame()
+        if non_spatial:
+            tissue = grn['tissue'].drop_duplicates()[0]
+            unconstrained_eqtls = non_spatial_eqtls.get_gene_eqtls(
+                gene_list[level], tissue, output_dir,
+                non_spatial_dir, snp_ref_dir, gene_ref_dir, bootstrap=bootstrap)
+            if not unconstrained_eqtls.empty:
+                unconstrained_eqtls = (unconstrained_eqtls[['snp', 'gene']]
+                                       .drop_duplicates()
+                                       .assign(eqtl_type = 'non_spatial'))
+        df = pd.concat([constrained_eqtls, unconstrained_eqtls])
+        df.loc[df.duplicated(subset=['snp', 'gene'], keep=False), 'eqtl_type'] = 'both'
+        df = df.drop_duplicates()
+        write_results(df,
+                      os.path.join(output_dir, f'level{level}_snp_gene.txt'))
+
+        
 
 def write_results(res, fp):
     output_dir = os.path.dirname(fp)

@@ -36,9 +36,10 @@ def get_eqtls(snps, tissue, output_dir, non_spatial_dir, snp_ref_dir, gene_ref_d
     cis_eqtls = get_cis_eqtls(snp_df, tissue, non_spatial_dir, gene_ref_dir)
     trans_eqtls = get_trans_eqtls(snp_df, tissue, non_spatial_dir, gene_ref_dir)
     eqtls = pd.concat([cis_eqtls, trans_eqtls])
-    if len(eqtls) == 0:
-        sys.exit('No eQTLs found in the gene regulatory map.')
-    write_file(eqtls, os.path.join(output_dir, 'non_spatial_eqtls.txt'))        
+    if eqtls.empty:
+        return pd.DataFrame()
+    #sys.exit('No eQTLs found in the gene regulatory map.')
+    #write_file(eqtls, os.path.join(output_dir, 'non_spatial_eqtls.txt'))        
     return eqtls
 
 def get_trans_eqtls(snps, tissue, non_spatial_dir, gene_ref_dir):
@@ -94,6 +95,93 @@ def get_cis_eqtls(snps, tissue, non_spatial_dir, gene_ref_dir):
     res['interaction_type'] = 'Cis'
     res['eqtl_type'] = 'non_spatial'
     return res[cols]
+
+
+def get_gene_eqtls(genes, tissue, output_dir, non_spatial_dir, snp_ref_dir, gene_ref_dir,
+                   bootstrap=False):
+    cis_eqtls = get_cis_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir,
+                                   snp_ref_dir, bootstrap)
+    trans_eqtls = get_trans_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir,
+                                       snp_ref_dir, bootstrap)
+    eqtls = pd.concat([cis_eqtls, trans_eqtls])
+    if eqtls.empty:
+        #print('No eQTLs found in the gene regulatory map.')
+        return pd.DataFrame()
+    #write_file(eqtls, os.path.join(output_dir, 'non_spatial_eqtls.txt'))
+    return eqtls
+
+
+def get_trans_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir, snp_ref_dir,
+                         bootstrap):
+    fp = os.path.join(non_spatial_dir, 'GTEx_Analysis_v8_trans_eGenes_fdr05.txt')
+    chunk_size = 200000
+    res = []
+    cols = ['variant_id', 'snp', 'gencode_id', 'gene', 'tissue', 'interaction_type', 'eqtl_type',
+            'tss_distance', 'maf', 'pval_nominal','slope', 'slope_se',
+            'gene_chr', 'gene_start', 'gene_end', 'snp_chr', 'snp_locus']
+    gene_ref = pd.read_csv(f'{gene_ref_dir}gene_reference.bed', sep='\t', header=None,
+                           names=['gene_chr', 'gene_start', 'gene_end', 'gene', 'gencode_id'])
+    gene_ref['id'] = gene_ref['gencode_id'].str[:15]
+    for df in pd.read_csv(fp, sep='\t', chunksize=chunk_size):
+        df = df.rename(columns = {'tissue_id': 'tissue',
+                                  'tissue_af': 'maf',
+                                  'gene_name': 'gene'})
+        #df['id'] = df['gene_id'].str[:15]
+        df = df.merge(gene_ref, how='inner', on=['gene'])
+        res.append(df[((df['gene'].isin(genes)) & (df['tissue'] == tissue))])
+    if len(res) == 0:
+        return pd.DataFrame()
+    res = pd.concat(res)
+    if res.empty:
+        return pd.DataFrame()
+    res['snp_chr'] = res['variant_id'].apply(lambda x: x.split('_')[0])
+    res['snp_locus'] = res['variant_id'].apply(lambda x: x.split('_')[1])
+    snps = pos2rsids(res[['snp_chr', 'snp_locus']].drop_duplicates(),
+                     snp_ref_dir, bootstrap)
+    res = res.merge(snps, how='inner', on=['snp_chr', 'snp_chr'])
+    res['tissue'] = tissue
+    res['interaction_type'] = 'Cis'
+    res['eqtl_type'] = 'non_spatial'
+    res['interaction_type'] = 'Trans-intrachromosomal'
+    res.loc[res['gene_chr'] != res['snp_chr'], 'interaction_type'] = 'Trans-interchromosomal'
+    res['eqtl_type'] = 'non_spatial'
+    res['tss_distance'] = -1
+    return res[cols]
+
+def get_cis_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir,
+                       snp_ref_dir, bootstrap):
+    cis_dir = os.path.join(non_spatial_dir, 'GTEx_Analysis_v8_eQTL')
+    tissue_fp = [fp for fp in os.listdir(cis_dir) 
+               if fp.endswith('gene_pairs.txt.gz') and
+               fp.split('.')[0] == tissue][0]
+    chunk_size = 200000
+    res = []
+    cols = ['variant_id', 'snp', 'gencode_id', 'gene', 'tissue', 'interaction_type', 'eqtl_type',
+            'tss_distance', 'maf', 'pval_nominal','slope', 'slope_se',
+            'gene_chr', 'gene_start', 'gene_end', 'snp_chr', 'snp_locus']
+    gene_ref = pd.read_csv(f'{gene_ref_dir}gene_reference.bed', sep='\t', header=None,
+                           names=['gene_chr', 'gene_start', 'gene_end', 'gene', 'gencode_id'])
+    gene_ref['id'] = gene_ref['gencode_id'].str[:15]
+    for df in pd.read_csv(f'{cis_dir}/{tissue_fp}', sep='\t',
+                          chunksize=chunk_size, compression='gzip'):
+        df['id'] = df['gene_id'].str[:15]
+        df = df.merge(gene_ref, how='inner', on='id')
+        res.append(df[df['gene'].isin(genes)])
+
+    if len(res) == 0:
+        return pd.DataFrame()
+    res = pd.concat(res)
+    if res.empty:
+        return pd.DataFrame()
+    res['snp_chr'] = res['variant_id'].apply(lambda x: x.split('_')[0])
+    res['snp_locus'] = res['variant_id'].apply(lambda x: int(x.split('_')[1]))
+    snps = pos2rsids(res[['snp_chr', 'snp_locus']].drop_duplicates(),
+                     snp_ref_dir, bootstrap)
+    res = res.merge(snps, how='inner', on=['snp_chr', 'snp_locus'])
+    res['tissue'] = tissue
+    res['interaction_type'] = 'Cis'
+    res['eqtl_type'] = 'non_spatial'
+    return res[cols]
     
 def write_file(df, fp):
     dirname = os.path.dirname(fp)
@@ -107,7 +195,7 @@ def parse_snp_input(snp_fp):
     else:
         return list(set(snp_fp))
 
-def rsids2pos(snps, ref_dir):
+def rsids2pos(snps, ref_dir, bootstrap=False):
     chrom_list = [fp.split('.')[0].split('_')[-1]
                   for fp in os.listdir(f'{ref_dir}/dbs/')
                   if fp.startswith('bed_chr')]
@@ -115,16 +203,16 @@ def rsids2pos(snps, ref_dir):
     chrom_dict = manager.dict()
     for chrom in chrom_list:
         chrom_dict[chrom] = pd.DataFrame()
-    '''
-    for chrom in chrom_list:
-        rsids2pos_chrom(chrom, snps, chrom_dict, ref_dir)
-    '''
-    with mp.Pool(16) as pool:
-        pool.starmap(rsids2pos_chrom,
-                     zip(chrom_list,
-                        repeat(snps),
-                        repeat(chrom_dict),
-                        repeat(ref_dir)))
+    if bootstrap:
+        for chrom in chrom_list:
+            rsids2pos_chrom(chrom, snps, chrom_dict, ref_dir)
+    else:
+        with mp.Pool(16) as pool:
+            pool.starmap(rsids2pos_chrom,
+                         zip(chrom_list,
+                            repeat(snps),
+                            repeat(chrom_dict),
+                            repeat(ref_dir)))
     df = []
     for chrom in chrom_dict.keys():
         df.append(chrom_dict[chrom])
@@ -132,6 +220,23 @@ def rsids2pos(snps, ref_dir):
     missed = list(set(snps).difference(set(df['rsid'].tolist())))
     
     return df, missed
+
+
+def rsids2pos_chrom(chrom, query_snps, chrom_dict, ref_dir):
+    pd.options.mode.chained_assignment = None
+    db = create_engine(f'sqlite:///{ref_dir}/dbs/bed_chr_{chrom}.db', 
+                       echo=False, poolclass=NullPool)
+    sql = '''SELECT * FROM snps WHERE rsid = '{}'; '''
+    snps = []
+    with db.connect() as conn:
+        for snp in query_snps:
+            res = pd.read_sql(sql.format(snp), conn)
+            if not res.empty:
+                snps.append(res)
+    if len(snps) == 0:
+        return 
+    snps = pd.concat(snps)
+    chrom_dict[chrom] = snps
 
 def merged_snps(query_snps, ref_dir):
     pd.options.mode.chained_assignment = None
@@ -151,22 +256,59 @@ def merged_snps(query_snps, ref_dir):
     snps['new'] = 'rs' + snps['new'].astype(str)
     snps['old'] = 'rs' + snps['old'].astype(str)
     return snps
-    
 
-def rsids2pos_chrom(chrom, query_snps, chrom_dict, ref_dir):
+
+def pos2rsids(snps, ref_dir, bootstrap=False):
+    chrom_list = [fp.split('.')[0].split('_')[-1]
+                  for fp in os.listdir(f'{ref_dir}/dbs/')
+                  if fp.startswith('bed_chr')]
+    manager = mp.Manager()
+    chrom_dict = manager.dict()
+    for chrom in chrom_list:
+        chrom_dict[chrom] = pd.DataFrame()
+    if bootstrap:
+        for chrom in chrom_list:
+            pos2rsids_chrom(chrom, snps, chrom_dict, ref_dir)
+    else:
+        with mp.Pool(16) as pool:
+            pool.starmap(pos2rsids_chrom,
+                         zip(chrom_list,
+                            repeat(snps),
+                            repeat(chrom_dict),
+                            repeat(ref_dir)))
+    df = []
+    for chrom in chrom_dict.keys():
+        df.append(chrom_dict[chrom])
+    df = pd.concat(df)
+    if df.empty:
+        return pd.DataFrame()
+    df = df.rename(columns={'chrom': 'snp_chr',
+                            'locus': 'snp_locus',
+                            'rsid': 'snp'})
+    df['snp_chr'] = 'chr' + df['snp_chr'].astype(str)
+    return df
+
+
+def pos2rsids_chrom(chrom, query_snps, chrom_dict, ref_dir):
     pd.options.mode.chained_assignment = None
     db = create_engine(f'sqlite:///{ref_dir}/dbs/bed_chr_{chrom}.db', 
                        echo=False, poolclass=NullPool)
-    sql = '''SELECT * FROM snps WHERE rsid = '{}'; '''
+    sql = '''SELECT * FROM snps WHERE chrom = '{}' and start = {}; '''
     snps = []
+    query = query_snps[query_snps['snp_chr'].str[3:] == chrom]
+    if query.empty:
+        return
     with db.connect() as conn:
-        for snp in query_snps:
-            res = pd.read_sql(sql.format(snp), conn)
+        for _, snp in query.iterrows():
+            #print(snp)
+            res = pd.read_sql(sql.format(snp['snp_chr'][3:],
+                                         int(snp['snp_locus']) - 1), conn)
             if not res.empty:
                 snps.append(res)
     if len(snps) == 0:
         return 
     snps = pd.concat(snps)
+    snps['locus'] = snps['start'] + 1
     chrom_dict[chrom] = snps
 
 def parse_args():

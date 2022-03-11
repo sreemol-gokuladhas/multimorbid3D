@@ -45,7 +45,7 @@ def ld_proxy_chrom(chrom, query_snps, chrom_dict, corr_thresh, window, pop, ld_d
            )
     chrom_dict[chrom] = snps[['chromq',	'posq', 'rsidq', 'chromt', 'post', 'rsidt', 'corr','dprime']]
 
-def ld_proxy(query_snps, corr_thresh, window, pop, ld_dir):
+def ld_proxy(query_snps, corr_thresh, window, pop, ld_dir, bootstrap=False):
     ld_dir = os.path.join(ld_dir, pop)
 
     chrom_list = [fp.split('.')[0] for fp in os.listdir(ld_dir) if fp.startswith('chr')]
@@ -53,15 +53,19 @@ def ld_proxy(query_snps, corr_thresh, window, pop, ld_dir):
     chrom_dict = manager.dict()
     for chrom in chrom_list:
         chrom_dict[chrom] = pd.DataFrame()
-    with mp.Pool(16) as pool:
-        pool.starmap(ld_proxy_chrom,
-                     zip(chrom_list,
-                        repeat(query_snps),
-                        repeat(chrom_dict),
-                        repeat(corr_thresh),
-                        repeat(window),
-                        repeat(pop),
-                        repeat(ld_dir)))
+    if bootstrap:
+        for chrom in chrom_list:
+            ld_proxy_chrom(chrom, query_snps, chrom_dict, corr_thresh, window, pop, ld_dir)
+    else:
+        with mp.Pool(16) as pool:
+            pool.starmap(ld_proxy_chrom,
+                         zip(chrom_list,
+                            repeat(query_snps),
+                            repeat(chrom_dict),
+                            repeat(corr_thresh),
+                            repeat(window),
+                            repeat(pop),
+                            repeat(ld_dir)))
     df = []
     for chrom in chrom_dict.keys():
         df.append(chrom_dict[chrom])
