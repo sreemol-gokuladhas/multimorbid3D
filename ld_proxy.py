@@ -101,15 +101,16 @@ def parse_args():
         '-o', '--output', required=True, help='Filepath to write results.')
     parser.add_argument(
         '-c', '--correlation-threshold', default=0.8, type=int,
-        help='The r-squared correlation threshold to use.')
+        help='The r-squared correlation threshold to use. Default = 0.8')
     parser.add_argument(
         '-w', '--window', default=5000, type=int,
-        help='The genomic window (+ or - in bases) within which proxies are searched.')
+        help='The genomic window (+ or - in bases) within which proxies are searched. Default = 5000')
     parser.add_argument('-p', '--population', default='EUR',
                         choices=['EUR'],
                         help='The ancestral population in which the LD is calculated')
-    parser.add_argument('--ld-dir', default='data/ld/dbs/super_pop/',
-                        help='Directory containing LD database.')
+    parser.add_argument(
+        '--ld-dir', default=os.path.join(os.path.dirname(__file__), 'data/ld/dbs/super_pop/'),
+        help='Directory containing LD database.')
     return parser.parse_args()
 
 

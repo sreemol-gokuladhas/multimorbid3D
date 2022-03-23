@@ -340,7 +340,7 @@ def pos2rsids_chrom(chrom, query_snps, chrom_dict, ref_dir):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Find disease associated with PPIN eQTLs.')
+        description='Identify non-spatial eQTLs.')
     parser.add_argument(
         '-s', '--snps', nargs='+',
         help='''A space-separated list of SNP rsIDs or filepath to a file 
@@ -351,11 +351,14 @@ def parse_args():
     parser.add_argument(
         '-t', '--tissue', required=True, help='Tissue in which eQTLs are mapped.')
     parser.add_argument(
-        '--non-spatial-dir', default='data/GTEx/', help='Filepath to non-spatial eQTLs.')
+        '--non-spatial-dir', default=os.path.join(os.path.dirname(__file__), 'data/GTEx/'),
+        help='Filepath to non-spatial eQTLs.')
     parser.add_argument(
-        '--snp-ref-dir', default='data/snps/', help='Filepath to SNP BED databases.')
+        '--snp-ref-dir', default=os.path.join(os.path.dirname(__file__), 'data/snps/'),
+        help='Filepath to SNP BED databases.')
     parser.add_argument(
-        '--gene-ref-dir', default='data/genes/', help='Filepath to gene BED.')
+        '--gene-ref-dir', default=os.path.join(os.path.dirname(__file__), 'data/genes/'),
+        help='Filepath to gene BED.')
     return parser.parse_args()
 
 

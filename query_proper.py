@@ -16,7 +16,7 @@ def parse_eqtls(eqtls_fp, logger):
         return pd.DataFrame({'gene': eqtls_fp})
 
 def query_proper(genes, levels, output_fp, logger):
-    proper_fp = 'data/PROPER_v1.csv'
+    proper_fp = os.path.join(os.path.dirname(__file__), 'data/PROPER_v1.csv')
     proper = pd.read_csv(proper_fp).rename(columns={
             'Cell line specificity': f'cell_line',
             'Odds ratio': f'odds_ratio',

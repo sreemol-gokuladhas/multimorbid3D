@@ -130,11 +130,12 @@ def parse_args():
     parser.add_argument(
         '-w', '--window', default=5000, type=int,
         help='The genomic window (+ or - in bases) within which proxies are searched.')
-    parser.add_argument('--population', default='EUR',
-                        choices=['EUR'],
-                        help='The ancestral population in which the LD is calculated.')
-    parser.add_argument('--ld-dir', default='data/ld/dbs/super_pop/',
-                        help='Directory containing LD database.')
+    parser.add_argument(
+        '--population', default='EUR', choices=['EUR'],
+        help='The ancestral population in which the LD is calculated.')
+    parser.add_argument(
+        '--ld-dir', default=os.path.join(os.path.dirname(__file__),'data/ld/dbs/super_pop/'),
+        help='Directory containing LD database.')
     return parser.parse_args()
 
 

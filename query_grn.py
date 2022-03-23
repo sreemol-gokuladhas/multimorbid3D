@@ -84,7 +84,7 @@ def get_eqtls(snps, grn, output_dir,
             snps, tissue, output_dir, non_spatial_dir,
             snp_ref_dir, gene_ref_dir, logger)
     if len(constrained_eqtls) > 0:
-        constrained_eqtls['eqtl_type'] = 'spatial'
+        constrained_eqtls.loc[:, 'eqtl_type'] = 'spatial'
     eqtls = pd.concat([constrained_eqtls, unconstrained_eqtls])
     if eqtls.empty:
         logger.write('No eQTLs found in the gene regulatory map.')
@@ -127,9 +127,9 @@ def write_results(res, fp):
         
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Find disease associated with PPIN eQTLs.')
+        description='Query tissue GRN for eQTL associations.')
     parser.add_argument(
-        '-s', '--snps',
+        '-s', '--snps', nargs='+',
         help='''A space-separated list of SNP rsIDs or filepath to a file 
         containing query SNP rsIDs in the 'snp' column. Note: this flag is mutually 
         exclusive with the --trait and --pmid flag.''')
@@ -151,20 +151,40 @@ def parse_args():
         '--non-spatial', action='store_true', default=False,
         help='Include non-spatial eQTLs.')
     parser.add_argument(
-        '--non-spatial-dir', default='data/GTEx/', help='Filepath to non-spatial eQTLs.')
+        '--non-spatial-dir', default=os.path.join(os.path.dirname(__file__), 'data/GTEx/'),
+        help='Filepath to non-spatial eQTLs.')
     parser.add_argument(
         '-g', '--gwas', default=None,
         help='''Filepath to GWAS associations. 
         Default: Associations from the GWAS Catalog 
         (https://www.ebi.ac.uk/gwas/api/search/downloads/full) ''')
     parser.add_argument(
-        '--snp-ref-dir', default='data/snps/', help='Filepath to SNP BED databases.')
+        '--snp-ref-dir', default=os.path.join(os.path.dirname(__file__), 'data/snps/'),
+        help='Filepath to SNP BED databases.')
     parser.add_argument(
-        '--gene-ref-dir', default='data/genes/', help='Filepath to gene BED.')
+        '--gene-ref-dir', default=os.path.join(os.path.dirname(__file__),'data/genes/'),
+        help='Filepath to gene BED.')
+    parser.add_argument(
+        '--ld', action='store_true', default=False,
+        help='Include LD SNPs in identifying eQTLs and GWAS traits.')
+    parser.add_argument(
+        '-c', '--correlation-threshold', default=0.8, type=int,
+        help='The r-squared correlation threshold to use.')
+    parser.add_argument(
+        '-w', '--window', default=5000, type=int,
+        help='The genomic window (+ or - in bases) within which proxies are searched.')
+    parser.add_argument(
+        '--population', default='EUR', choices=['EUR'],
+        help='The ancestral population in which the LD is calculated.')
+    parser.add_argument(
+        '--ld-dir',
+        default=os.path.join(os.path.dirname(__file__), 'data/ld/dbs/super_pop/'),
+        help='Directory containing LD database.')
     return parser.parse_args()
 
 
 if __name__=='__main__':
+    pd.options.mode.chained_assignment = None
     args = parse_args()
     if not args.snps and not args.trait and not args.pmid:
         sys.exit('FATAL: One of --snps, --trait, or --pmid is required.\nExiting.')
@@ -183,6 +203,8 @@ if __name__=='__main__':
         snps = parse_snp_input(args.snps, logger)
     grn = parse_grn(args.grn_dir, logger)
     eqtls = get_eqtls(snps, grn, args.output_dir, args.non_spatial, args.non_spatial_dir,
-                      args.snp_ref_dir, args.gene_ref_dir, logger)
+                      args.snp_ref_dir, args.gene_ref_dir,
+                      args.ld, args.correlation_threshold, args.window, args.population,
+                      args.ld_dir, logger)
     logger.write('Done.')
     logger.write(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')

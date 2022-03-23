@@ -45,7 +45,7 @@ def parse_input(inputs):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Query STRINGdb for proteins that interact with input proteins.')
+        description='Identify multimorbid traits based on eQTL associations and protein-protein interactions.')
     parser.add_argument(
         '-g', '--genes', nargs='+',
         help='''A space-separated list of gene symbols or filepath to a file 
@@ -76,42 +76,46 @@ def parse_args():
         help='Directory to write results.')
     parser.add_argument(
         '-l', '--levels', default=1, type=int,
-        help='Path length (i.e. number of nodes) to query. Default: 1')
+        help='Path length (i.e. number of nodes) to query. Default = 1')
     parser.add_argument(
         '-p', '--ppin', required=True, choices=['string', 'proper'],
         help='''The protein-protein-interaction data to use.''')
     parser.add_argument(
         '--string-score', default=0.7, type=float,
-        help='Cut-off score for STRING interactions. Default: 0.7')
+        help='Cut-off score for STRING interactions. Default = 0.7')
     parser.add_argument(
         '--bootstrap', default=False, action='store_true',
-        help='Perform a bootstrap. Default: False')
+        help='Perform a bootstrap. Default = False')
     parser.add_argument(
         '--bootstraps', default=1000, type=int,
         help='Number of bootstrap datasets. Default: 1000')
     parser.add_argument(
         '--non-spatial', action='store_true', default=False,
-        help='Include non-spatial eQTLs.')
+        help='Include non-spatial eQTLs. Default = False')
     parser.add_argument(
-        '--non-spatial-dir', default='data/GTEx/', help='Filepath to non-spatial eQTLs.')
+        '--non-spatial-dir', default=os.path.join(os.path.dirname(__file__), 'data/GTEx/'),
+        help='Filepath to non-spatial eQTLs.')
     parser.add_argument(
-        '--snp-ref-dir', default='data/snps/', help='Filepath to SNP BED databases.')
+        '--snp-ref-dir', default=os.path.join(os.path.dirname(__file__), 'data/snps/'),
+        help='Filepath to SNP BED databases.')
     parser.add_argument(
-        '--gene-ref-dir', default='data/genes/', help='Filepath to gene BED.')
+        '--gene-ref-dir', default=os.path.join(os.path.dirname(__file__), 'data/genes/'),
+        help='Filepath to gene BED.')
     parser.add_argument(
         '--ld', action='store_true', default=False,
-        help='Include LD SNPs in identifying eQTLs and GWAS traits.')
+        help='Include LD SNPs in identifying eQTLs and GWAS traits. Default = False')
     parser.add_argument(
         '-c', '--correlation-threshold', default=0.8, type=int,
         help='The r-squared correlation threshold to use.')
     parser.add_argument(
         '-w', '--window', default=5000, type=int,
-        help='The genomic window (+ or - in bases) within which proxies are searched.')
+        help='The genomic window (+ or - in bases) within which proxies are searched. Default = 5000')
     parser.add_argument(
          '--population', default='EUR', choices=['EUR'],
-        help='The ancestral population in which the LD is calculated.')
-    parser.add_argument('--ld-dir', default='data/ld/dbs/super_pop/',
-                        help='Directory containing LD database.')
+        help='The ancestral population in which the LD is calculated. Default = "EUR"')
+    parser.add_argument(
+        '--ld-dir', default=os.path.join(os.path.dirname(__file__), 'data/ld/dbs/super_pop/'),
+        help='Directory containing LD database.')
     return parser.parse_args()
 
 def parse_snps(snp_arg, trait_arg, pmid_arg, gwas, grn, output_dir,
