@@ -3,11 +3,13 @@ import pandas as pd
 import sys
 import os
 import argparse
+import time
 
 import query_grn
+import logger
 
-def parse_ppin(ppin_dir):
-    #print('Parsing input...')
+def parse_ppin(ppin_dir, logger):
+    #logger.write('Parsing input...')
     if os.path.isdir(ppin_dir):
         gene_fps = sorted([level for level in os.listdir(ppin_dir)
                      if level.endswith('_genes.txt')])
@@ -20,7 +22,7 @@ def parse_ppin(ppin_dir):
         sys.exit('ppin-dir entered not a directory.')
 
 def write_results(res, out):
-    #print('Writing results...')
+    #logger.write('Writing results...')
     os.makedirs(out, exist_ok=True)
     for level in res:
         level_fp = os.path.join(out, f'{level}.txt')
@@ -34,7 +36,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description='Find eQTLs of proteins.')
     parser.add_argument(
-        '--ppin-dir', required=True,
+        '-p', '--ppin-dir', required=True,
         help='''Directory containing files of PPIN level genes.''' )
     parser.add_argument(
         '-o', '--output-dir', required=True, help='Directory to write results.')
@@ -58,7 +60,7 @@ def parse_args():
     parser.add_argument(
         '-w', '--window', default=5000, type=int,
         help='The genomic window (+ or - in bases) within which proxies are searched.')
-    parser.add_argument('-p', '--population', default='EUR',
+    parser.add_argument('--population', default='EUR',
                         choices=['EUR'],
                         help='The ancestral population in which the LD is calculated.')
     parser.add_argument('--ld-dir', default='data/ld/dbs/super_pop/',
@@ -69,8 +71,16 @@ def parse_args():
 
 if __name__=='__main__':
     args = parse_args()
-    gene_list = parse_ppin(args.ppin_dir)
-    grn = query_grn.parse_grn(args.grn_dir)
+    start_time = time.time()
+    os.makedirs(args.output_dir, exist_ok=True)
+    logger = logger.Logger(logfile=os.path.join(args.output_dir, 'get_ppi_eqtls.log'))
+    logger.write('SETTINGS\n========')
+    for arg in vars(args):
+        logger.write(f'{arg}:\t {getattr(args, arg)}')
+    gene_list = parse_ppin(args.ppin_dir, logger)
+    grn = query_grn.parse_grn(args.grn_dir, logger)
     query_grn.get_gene_eqtls(
         gene_list, grn, args.output_dir,
-        args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir)
+        args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir, logger)
+    logger.write('Done.')
+    logger.write(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')

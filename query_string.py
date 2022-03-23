@@ -10,6 +10,7 @@ import stringdb_params as sdb
 from io import StringIO
 import time
 
+import logger
 
 def get_string_id(genes):
     ''' Get STRING IDs of a list of gene
@@ -58,7 +59,7 @@ def get_string_interaction_partners(genes, score_cutoff, level):
         'score': f'score_{level}'})
     return interactions
 
-def query_string(gene_df, levels, score, output_fp):
+def query_string(gene_df, levels, score, output_fp, logger):
     string_version = 'https://string-db.org/api/json/version'
     # TODO: Log STRING version
     ids_df = get_string_id(gene_df['gene'].tolist())
@@ -76,7 +77,7 @@ def query_string(gene_df, levels, score, output_fp):
                                    'level1': 'geneB',
                                    'score_0': 'score'})
                   .assign(level = '0')))
-    #print('Querying STRINGdb for interactions between...')
+    #logger.write('Querying STRINGdb for interactions between...')
     for level in range(1, levels):
         level_df = get_string_interaction_partners(
             df[f'id_{level}'].drop_duplicates().tolist(), score, level)
@@ -108,14 +109,14 @@ def query_string(gene_df, levels, score, output_fp):
 def write_results(df, output_fp):
     out_dir = os.path.dirname(output_fp)
     os.makedirs(out_dir, exist_ok=True)
-    #print('Writing PPIN...')
+    #logger.write('Writing PPIN...')
     df.to_csv(output_fp, sep='\t', index=False)
 
 
 
-def parse_input(inputs):
+def parse_input(inputs, logger):
     '''Return a dataframe of gene input.'''
-    #print('Parsing input...')
+    #logger.write('Parsing input...')
     df = pd.DataFrame()
     if os.path.isfile(inputs[0]): # Input is file.
         df = pd.read_csv(inputs[0], sep='\t')
@@ -150,8 +151,13 @@ if __name__=='__main__':
     pd.options.mode.chained_assignment = None 
     start_time = time.time()
     args = parse_args()
-    gene_df = parse_input(args.input)
-    genes, graph = query_string(gene_df, args.levels, args.score, args.output)
-
-    #print('Done.')
-    #print(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')
+    os.makedirs(args.output, exist_ok=True)
+    logger = logger.Logger(logfile=os.path.join(args.output, 'query_string.log'))
+    logger.write('SETTINGS\n========')
+    for arg in vars(args):
+        logger.write(f'{arg}:\t {getattr(args, arg)}')
+    gene_df = parse_input(args.input, logger)
+    genes, graph = query_string(gene_df, args.levels, args.score, args.output, logger)
+    logger.write('Done.')
+    logger.write(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')
+    

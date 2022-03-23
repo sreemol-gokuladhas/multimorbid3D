@@ -7,11 +7,12 @@ import argparse
 from scipy.stats import hypergeom
 import statsmodels.stats.multitest as mt
 from tqdm import tqdm
+import time
 
 import ld_proxy
+import logger
 
-
-def parse_gwas(gwas_fp):
+def parse_gwas(gwas_fp, logger):
     #print('Parsing GWAS associations...')
     cols = ['SNPS', 'SNP_ID_CURRENT', 'DISEASE/TRAIT', #'MAPPED_GENE',
             'P-VALUE',  'OR or BETA', '95% CI (TEXT)']
@@ -40,15 +41,15 @@ def clean_snp_ids(snp_id):
             return f"rs{snp_id}" if not snp_id[:-1].isdigit() else f"rs{snp_id[:-1]}"
 
 def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_dir,
-                 disable_pg=True, bootstrap=False):
-    #print('Identifying GWAS traits.')
+                 logger, disable_pg=True, bootstrap=False):
+    #logger.write('Identifying GWAS traits.')
     sig_res = []
-    eqtl_fps = [fp for fp in os.listdir(ppin_dir) if fp.endswith('snp_gene.txt')]
+    eqtl_fps = [fp for fp in sorted(os.listdir(ppin_dir)) if fp.endswith('snp_gene.txt')]
     # Total GWAS SNPs.
     M = gwas['SNPS'].nunique()
     for level_fp in eqtl_fps:
         level = f"{os.path.basename(level_fp).split('.')[0].split('_')[0]}"
-        #print(f"\t{level}")
+        #logger.write(f"\t{level}")
         df = pd.read_csv(os.path.join(ppin_dir, level_fp), sep='\t')
         snps = df['snp'].drop_duplicates().tolist()
         if ld:
@@ -65,7 +66,7 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
         snp_trait_df = []
         for trait in tqdm(overlap['DISEASE/TRAIT'].drop_duplicates(),
                           disable=disable_pg):
-            #print(f'\t\t{trait}')
+            #logger.write(f'\t\t{trait}')
             # Total trait-associated SNPs in GWAS Catalog 
             n = gwas[gwas['DISEASE/TRAIT']==trait]['SNPS'].nunique()
             trait_overlap = overlap[overlap['DISEASE/TRAIT'] == trait][['SNPS', 'DISEASE/TRAIT']]
@@ -91,9 +92,9 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
             write_results(
                 snp_trait_df.merge(df.drop(columns=['snp']),
                                    how='inner', left_on='snp', right_on='rsidt'),
-                f'{level}_sig_trait_snp_gene.txt', out)
+                f'{level}_sig_interactions.txt', out)
         else:
-            write_results(snp_trait_df.merge(df, how='inner'), f'{level}_sig_trait_snp_gene.txt', out)
+            write_results(snp_trait_df.merge(df, how='inner'), f'{level}_sig_interactions.txt', out)
         write_results(probs_df,  f'{level}_enrichment.txt', out)
     if len(sig_res) == 0:
         return
@@ -102,7 +103,7 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
     return sig_res
 
 def write_results(res, fp, out):
-    #print(f'\tWriting {fp}...')
+    #logger.write(f'\tWriting {fp}...')
     os.makedirs(out, exist_ok=True)
     res.to_csv(os.path.join(out, fp), sep='\t', index=False)
 
@@ -111,7 +112,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description='Find disease associated with PPIN eQTLs.')
     parser.add_argument(
-         '--ppin-dir', required=True,
+        '-p', '--ppin-dir', required=True,
         help='Filepath to directory containing eQTL-gene pairs for PPIN levels.')
     parser.add_argument(
         '-o', '--output-dir', required=True, help='Directory to write results.')
@@ -129,7 +130,7 @@ def parse_args():
     parser.add_argument(
         '-w', '--window', default=5000, type=int,
         help='The genomic window (+ or - in bases) within which proxies are searched.')
-    parser.add_argument('-p', '--population', default='EUR',
+    parser.add_argument('--population', default='EUR',
                         choices=['EUR'],
                         help='The ancestral population in which the LD is calculated.')
     parser.add_argument('--ld-dir', default='data/ld/dbs/super_pop/',
@@ -139,8 +140,16 @@ def parse_args():
 
 if __name__=='__main__':
     args = parse_args()
-    gwas = parse_gwas(args.gwas)
+    start_time = time.time()
+    os.makedirs(args.output_dir, exist_ok=True)
+    logger = logger.Logger(logfile=os.path.join(args.output_dir, 'find_snp_disease.log'))
+    logger.write('SETTINGS\n========')
+    for arg in vars(args):
+        logger.write(f'{arg}:\t {getattr(args, arg)}')
+    gwas = parse_gwas(args.gwas, logger)
     find_disease(gwas, args.ppin_dir, args.output_dir,
-                 args.ld, args.correlation_threshold, args.window, args.population, args.ld_dir)
+                 args.ld, args.correlation_threshold, args.window, args.population,
+                 args.ld_dir, logger)
     #write_results(res, args.output_dir)
-    print('Done.')
+    logger.write('Done.')
+    logger.write(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')

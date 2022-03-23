@@ -13,8 +13,10 @@ from itertools import repeat
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
+import logger
     
-def get_eqtls(snps, tissue, output_dir, non_spatial_dir, snp_ref_dir, gene_ref_dir):
+def get_eqtls(snps, tissue, output_dir, non_spatial_dir, snp_ref_dir, gene_ref_dir,
+              logger):
     snp_df, failed = rsids2pos(snps, snp_ref_dir)
     if len(failed) > 0:
         merged_rsids = merged_snps(failed, snp_ref_dir)
@@ -23,12 +25,12 @@ def get_eqtls(snps, tissue, output_dir, non_spatial_dir, snp_ref_dir, gene_ref_d
         if len(merged_rsids) > 0:
             num_merged_rsids = merged_rsids['new'].nunique()
             write_file(merged_rsids, os.path.join(output_dir, 'merged_snps.txt'))
-            print(f'WARNING: {num_merged_rsids} SNPs have been merged. '+
+            logger.write(f'WARNING: {num_merged_rsids} SNPs have been merged. '+
                   'See "merged_snps.txt" for details')
         if len(failed) > 0:
             write_file(pd.DataFrame({'failed_snps': failed}),
                        os.path.join(output_dir, 'failed_snps.txt'))
-            print(f'''WARNING: {len(failed)} SNPs could not be found in the SNP database.''')
+            logger.write(f'''WARNING: {len(failed)} SNPs could not be found in the SNP database.''')
     snp_df['snp_locus'] = snp_df['start'] + 1
     snp_df['id'] = 'chr' + snp_df['chrom'].astype(str) + '_' + snp_df['snp_locus'].astype(str)
     snp_df = snp_df.rename(columns={'chrom': 'snp_chr',
@@ -50,7 +52,14 @@ def get_trans_eqtls(snps, tissue, non_spatial_dir, gene_ref_dir):
             'tss_distance', 'maf', 'pval_nominal','slope', 'slope_se',
             'gene_chr', 'gene_start', 'gene_end', 'snp_chr', 'snp_locus']
     for df in pd.read_csv(fp, sep='\t', chunksize=chunk_size):
-        df['id'] = df['variant_id'].apply(lambda x: '_'.join(x.split('_')[:2]))
+        df['chr'] = df['variant_id'].apply(lambda x: x.split('_')[0]) 
+        df['pos'] = df['variant_id'].apply(lambda x: int(x.split('_')[1]))
+        df['ref'] = df['variant_id'].apply(lambda x: len(x.split('_')[2])) 
+        df['alt'] = df['variant_id'].apply(lambda x: len(x.split('_')[3]))
+        # Insertions have one base added.
+        df.loc[df['ref'] > 1, 'pos'] = df['pos'].astype(int) + 1
+        df['id'] = df['chr'] + '_' + df['pos'].astype(str)
+        #df['id'] = df['variant_id'].apply(lambda x: '_'.join(x.split('_')[:2]))
         df = df.rename(columns = {'tissue_id': 'tissue',
                                   'tissue_af': 'maf',
                                   'gene_name': 'gene'})
@@ -81,7 +90,13 @@ def get_cis_eqtls(snps, tissue, non_spatial_dir, gene_ref_dir):
             'gene_chr', 'gene_start', 'gene_end', 'snp_chr', 'snp_locus']
     for df in pd.read_csv(f'{cis_dir}/{tissue_fp}', sep='\t',
                           chunksize=chunk_size, compression='gzip'):
-        df['id'] = df['variant_id'].apply(lambda x: '_'.join(x.split('_')[:2]))
+        df['chr'] = df['variant_id'].apply(lambda x: x.split('_')[0]) 
+        df['pos'] = df['variant_id'].apply(lambda x: int(x.split('_')[1]))
+        df['ref'] = df['variant_id'].apply(lambda x: len(x.split('_')[2])) 
+        df['alt'] = df['variant_id'].apply(lambda x: len(x.split('_')[3]))
+        # Insertions have one base added.
+        df.loc[df['ref'] > 1, 'pos'] = df['pos'].astype(int) + 1
+        df['id'] = df['chr'] + '_' + df['pos'].astype(str)
         res.append(df[df['id'].isin(snps['id'])])
     if len(res) == 0:
         return
@@ -98,14 +113,14 @@ def get_cis_eqtls(snps, tissue, non_spatial_dir, gene_ref_dir):
 
 
 def get_gene_eqtls(genes, tissue, output_dir, non_spatial_dir, snp_ref_dir, gene_ref_dir,
-                   bootstrap=False):
+                   logger, bootstrap=False):
     cis_eqtls = get_cis_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir,
                                    snp_ref_dir, bootstrap)
     trans_eqtls = get_trans_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir,
                                        snp_ref_dir, bootstrap)
     eqtls = pd.concat([cis_eqtls, trans_eqtls])
     if eqtls.empty:
-        #print('No eQTLs found in the gene regulatory map.')
+        #logger.write('No eQTLs found in the gene regulatory map.')
         return pd.DataFrame()
     #write_file(eqtls, os.path.join(output_dir, 'non_spatial_eqtls.txt'))
     return eqtls
@@ -127,7 +142,7 @@ def get_trans_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir, snp_ref_d
                                   'tissue_af': 'maf',
                                   'gene_name': 'gene'})
         #df['id'] = df['gene_id'].str[:15]
-        df = df.merge(gene_ref, how='inner', on=['gene'])
+        df = df.merge(gene_ref, how='inner', on=['gene', 'gene_chr'])
         res.append(df[((df['gene'].isin(genes)) & (df['tissue'] == tissue))])
     if len(res) == 0:
         return pd.DataFrame()
@@ -138,7 +153,9 @@ def get_trans_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir, snp_ref_d
     res['snp_locus'] = res['variant_id'].apply(lambda x: x.split('_')[1])
     snps = pos2rsids(res[['snp_chr', 'snp_locus']].drop_duplicates(),
                      snp_ref_dir, bootstrap)
-    res = res.merge(snps, how='inner', on=['snp_chr', 'snp_chr'])
+    res['snp_locus'] = res['snp_locus'].astype(int)
+    #snp['snp_locus'] = snp['snp_locus'].astype(int)
+    res = res.merge(snps, how='inner', on=['snp_chr', 'snp_locus'])
     res['tissue'] = tissue
     res['interaction_type'] = 'Cis'
     res['eqtl_type'] = 'non_spatial'
@@ -177,7 +194,14 @@ def get_cis_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir,
     res['snp_locus'] = res['variant_id'].apply(lambda x: int(x.split('_')[1]))
     snps = pos2rsids(res[['snp_chr', 'snp_locus']].drop_duplicates(),
                      snp_ref_dir, bootstrap)
-    res = res.merge(snps, how='inner', on=['snp_chr', 'snp_locus'])
+    try:
+        res = res.merge(snps, how='inner', on=['snp_chr', 'snp_locus'])
+    except:
+        print(res)
+        print(snps)
+        print(res.columns)
+        print(snps.columns)
+        exit()
     res['tissue'] = tissue
     res['interaction_type'] = 'Cis'
     res['eqtl_type'] = 'non_spatial'
@@ -188,7 +212,7 @@ def write_file(df, fp):
     os.makedirs(dirname, exist_ok=True)
     df.to_csv(fp, sep='\t', index=False)
 
-def parse_snp_input(snp_fp):
+def parse_snp_input(snp_fp, logger):
     if os.path.isfile(snp_fp[0]):
         df = pd.read_csv(snp_fp[0], sep='\t', header=None, names=['snp'])
         return df[df['snp'] != "snp"]['snp'].drop_duplicates().tolist()
@@ -262,14 +286,17 @@ def pos2rsids(snps, ref_dir, bootstrap=False):
     chrom_list = [fp.split('.')[0].split('_')[-1]
                   for fp in os.listdir(f'{ref_dir}/dbs/')
                   if fp.startswith('bed_chr')]
-    manager = mp.Manager()
-    chrom_dict = manager.dict()
-    for chrom in chrom_list:
-        chrom_dict[chrom] = pd.DataFrame()
     if bootstrap:
+        chrom_dict = {}
+        for chrom in chrom_list:
+            chrom_dict[chrom] = pd.DataFrame()
         for chrom in chrom_list:
             pos2rsids_chrom(chrom, snps, chrom_dict, ref_dir)
     else:
+        manager = mp.Manager()
+        chrom_dict = manager.dict()
+        for chrom in chrom_list:
+            chrom_dict[chrom] = pd.DataFrame()
         with mp.Pool(16) as pool:
             pool.starmap(pos2rsids_chrom,
                          zip(chrom_list,
@@ -300,7 +327,7 @@ def pos2rsids_chrom(chrom, query_snps, chrom_dict, ref_dir):
         return
     with db.connect() as conn:
         for _, snp in query.iterrows():
-            #print(snp)
+            #logger.write(snp)
             res = pd.read_sql(sql.format(snp['snp_chr'][3:],
                                          int(snp['snp_locus']) - 1), conn)
             if not res.empty:
@@ -334,9 +361,16 @@ def parse_args():
 
 if __name__=='__main__':
     args = parse_args()
-    snps = parse_snp_input(args.snps)
+    logger = logger.Logger(logfile=os.path.join(args.output_dir, 'non_spatial_eqtls.log'))
+    logger.write('SETTINGS\n========')
+    for arg in vars(args):
+        logger.write(f'{arg}:\t {getattr(args, arg)}')
+    snps = parse_snp_input(args.snps, logger)
     eqtls = get_eqtls(snps, args.tissue, args.output_dir,
-                      args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir)
+                      args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir,
+                      logger)
+    logger.write('Done.')
+    logger.write(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')
 
 
 

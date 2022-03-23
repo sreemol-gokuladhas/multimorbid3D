@@ -7,16 +7,21 @@ import argparse
 from scipy.stats import hypergeom
 import statsmodels.stats.multitest as mt
 from tqdm import tqdm
+import time
+import ssl
 
 import non_spatial_eqtls
 import ld_proxy
+import logger
 
-def parse_gwas(gwas_fp):
-    print('Parsing GWAS associations...')
+def parse_gwas(gwas_fp, logger):
+    logger.write('Parsing GWAS associations...')
     cols = ['SNPS', 'SNP_ID_CURRENT', 'DISEASE/TRAIT', 'PUBMEDID',
             'P-VALUE',  'OR or BETA', '95% CI (TEXT)']
     if gwas_fp is None:
         fp = 'https://www.ebi.ac.uk/gwas/api/search/downloads/full'
+        # To prevent the occasssional urllib.error.URLError
+        ssl._create_default_https_context = ssl._create_unverified_context
         df = pd.read_csv(fp, sep='\t', usecols=cols, low_memory=False)
     else:
         if not os.path.isfile(gwas_fp):
@@ -28,7 +33,7 @@ def parse_gwas(gwas_fp):
     df['SNPS'] = df['SNPS'].str.strip()
     return df
 
-def parse_snp_input(snp_fp):
+def parse_snp_input(snp_fp, logger):
     if os.path.isfile(snp_fp[0]):
         df = pd.read_csv(snp_fp[0], sep='\t', header=None, names=['snp'])
         return df[df['snp'] != "snp"]['snp'].drop_duplicates().tolist()
@@ -46,16 +51,16 @@ def clean_snp_ids(snp_id):
             snp_id = snp_id.split('_')[0]
             return f"rs{snp_id}" if not snp_id[:-1].isdigit() else f"rs{snp_id[:-1]}"
 
-def extract_trait_snps(trait, gwas):
+def extract_trait_snps(trait, gwas, logger):
     return gwas[gwas['DISEASE/TRAIT'] == trait]['SNPS'].drop_duplicates()
 
-def extract_pmid_snps(pmid, gwas):
+def extract_pmid_snps(pmid, gwas, logger):
     return gwas[gwas['PUBMEDID'] == int(pmid)]['SNPS'].drop_duplicates()
 
-def parse_grn(grn_dir):
-    print('Parsing tissue gene regulatory map...')
+def parse_grn(grn_dir, logger):
+    logger.write('Parsing tissue gene regulatory map...')
     grn = []
-    chrom_dirs =  [d for d in os.listdir(grn_dir) if not d.endswith('.log')]
+    chrom_dirs =  [d for d in os.listdir(grn_dir) if os.path.isdir(os.path.join(grn_dir, d))]#not d.endswith('.log')]
     for chrom in chrom_dirs:
         chrom_eqtls = pd.read_csv(
             os.path.join(grn_dir, chrom, 'significant_eqtls.txt'), sep='\t')
@@ -64,9 +69,9 @@ def parse_grn(grn_dir):
     
 def get_eqtls(snps, grn, output_dir,
               non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
-              ld, corr_thresh, window, population, ld_dir):
+              ld, corr_thresh, window, population, ld_dir, logger):
     if ld:
-        ld_snps = ld_proxy.ld_proxy(snps, corr_thresh, window, population, ld_dir)
+        ld_snps = ld_proxy.ld_proxy(snps, corr_thresh, window, population, ld_dir, logger)
         snps = ld_snps['rsidt'].drop_duplicates()
         write_results(ld_snps, os.path.join(output_dir, 'query_snp_ld.txt'))
     constrained_eqtls = grn[grn['snp'].isin(snps)]
@@ -77,19 +82,20 @@ def get_eqtls(snps, grn, output_dir,
         tissue = grn['tissue'].drop_duplicates()[0]
         unconstrained_eqtls = non_spatial_eqtls.get_eqtls(
             snps, tissue, output_dir, non_spatial_dir,
-            snp_ref_dir, gene_ref_dir)
+            snp_ref_dir, gene_ref_dir, logger)
     if len(constrained_eqtls) > 0:
         constrained_eqtls['eqtl_type'] = 'spatial'
     eqtls = pd.concat([constrained_eqtls, unconstrained_eqtls])
     if eqtls.empty:
-        #sys.exit('No eQTLs found in the gene regulatory map.')
+        logger.write('No eQTLs found in the gene regulatory map.')
         return pd.DataFrame()
     write_results(eqtls.drop_duplicates(), os.path.join(output_dir, 'query_eqtls.txt'))
     return eqtls
 
 def get_gene_eqtls(gene_list, grn, output_dir,
-                   non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir, bootstrap=False):
-    #print('Identifying gene eQTLs...')
+                   non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
+                   logger, bootstrap=False):
+    #logger.write('Identifying gene eQTLs...')
     for level in range(len(gene_list)):
         constrained_eqtls = (
             grn[grn['gene'].isin(gene_list[level])][['snp', 'gene']]
@@ -100,7 +106,7 @@ def get_gene_eqtls(gene_list, grn, output_dir,
             tissue = grn['tissue'].drop_duplicates()[0]
             unconstrained_eqtls = non_spatial_eqtls.get_gene_eqtls(
                 gene_list[level], tissue, output_dir,
-                non_spatial_dir, snp_ref_dir, gene_ref_dir, bootstrap=bootstrap)
+                non_spatial_dir, snp_ref_dir, gene_ref_dir, logger, bootstrap=bootstrap)
             if not unconstrained_eqtls.empty:
                 unconstrained_eqtls = (unconstrained_eqtls[['snp', 'gene']]
                                        .drop_duplicates()
@@ -162,16 +168,21 @@ if __name__=='__main__':
     args = parse_args()
     if not args.snps and not args.trait and not args.pmid:
         sys.exit('FATAL: One of --snps, --trait, or --pmid is required.\nExiting.')
-    gwas = parse_gwas(args.gwas)
+    start_time = time.time()
+    logger = logger.Logger(logfile=os.path.join(args.output_dir, 'query_grn.log'))
+    logger.write('SETTINGS\n========')
+    for arg in vars(args):
+        logger.write(f'{arg}:\t {getattr(args, arg)}')
+    gwas = parse_gwas(args.gwas, logger)
     snps = args.snps
-    print(snps)
     if args.trait:
-        snps = extract_trait_snps(args.trait, gwas)
+        snps = extract_trait_snps(args.trait, gwas, logger)
     elif args.pmid:
-        snps = extract_pmid_snps(args.pmid, gwas)
+        snps = extract_pmid_snps(args.pmid, gwas, logger)
     else:
-        snps = parse_snp_input(args.snps)
-    grn = parse_grn(args.grn_dir)
+        snps = parse_snp_input(args.snps, logger)
+    grn = parse_grn(args.grn_dir, logger)
     eqtls = get_eqtls(snps, grn, args.output_dir, args.non_spatial, args.non_spatial_dir,
-                      args.snp_ref_dir, args.gene_ref_dir)
-    
+                      args.snp_ref_dir, args.gene_ref_dir, logger)
+    logger.write('Done.')
+    logger.write(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')

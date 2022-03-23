@@ -9,7 +9,9 @@ import sys
 import os
 import argparse
 
-def parse_snps(snps_input):
+import logger
+
+def parse_snps(snps_input, logger):
     if os.path.isfile(snps_input[0]): 
         df = pd.read_csv(snps_input[0], sep='\t', header=None, names=['snp'])
         df = df[df['snp'] != 'snp']
@@ -45,7 +47,7 @@ def ld_proxy_chrom(chrom, query_snps, chrom_dict, corr_thresh, window, pop, ld_d
            )
     chrom_dict[chrom] = snps[['chromq',	'posq', 'rsidq', 'chromt', 'post', 'rsidt', 'corr','dprime']]
 
-def ld_proxy(query_snps, corr_thresh, window, pop, ld_dir, bootstrap=False):
+def ld_proxy(query_snps, corr_thresh, window, pop, ld_dir, logger, bootstrap=False):
     ld_dir = os.path.join(ld_dir, pop)
 
     chrom_list = [fp.split('.')[0] for fp in os.listdir(ld_dir) if fp.startswith('chr')]
@@ -114,10 +116,14 @@ def parse_args():
 if __name__=='__main__':
     start_time = time()
     args = parse_args()
-    snps = parse_snps(args.snps)
+    logger = logger.Logger(logfile=os.path.join(args.output_dir, 'ld_proxy.log'))
+    logger.write('SETTINGS\n========')
+    for arg in vars(args):
+        logger.write(f'{arg}:\t {getattr(args, arg)}')
+    snps = parse_snps(args.snps, logger)
     df = ld_proxy(snps['snp'].tolist(), args.correlation_threshold,
-                  args.window, args.population, args.ld_dir)
+                  args.window, args.population, args.ld_dir, logger)
     write_results(df, args.output)
-    print('Total time elasped: {:.2f} mins.'.format(
+    logger.write('Total time elasped: {:.2f} mins.'.format(
         (time()-start_time)/60))
 

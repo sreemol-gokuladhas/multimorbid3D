@@ -3,16 +3,19 @@ import pandas as pd
 import sys
 import os
 import argparse
+import time
 
-def parse_eqtls(eqtls_fp):
-    #print('Parsing input...')
+import logger
+
+def parse_eqtls(eqtls_fp, logger):
+    #logger.write('Parsing input...')
     if os.path.isfile(eqtls_fp[0]): 
         df = pd.read_csv(eqtls_fp[0], sep='\t')
-        return df['gene'].drop_duplicates()
+        return df[['gene']].drop_duplicates()
     else:
         return pd.DataFrame({'gene': eqtls_fp})
 
-def query_proper(genes, levels, output_fp):
+def query_proper(genes, levels, output_fp, logger):
     proper_fp = 'data/PROPER_v1.csv'
     proper = pd.read_csv(proper_fp).rename(columns={
             'Cell line specificity': f'cell_line',
@@ -23,9 +26,9 @@ def query_proper(genes, levels, output_fp):
     gene_list = [genes['gene'].drop_duplicates().tolist()]
     graph = []
     df_all = pd.DataFrame({'level0': genes['gene'].tolist()})
-    #print('Querying PROPER database...')
+    #logger.write('Querying PROPER database...')
     for level in range(levels):
-        #print(f'\tlevel {level + 1}...')
+        #logger.write(f'\tlevel {level + 1}...')
         df1 = proper.loc[proper['Gene1'].isin(gene_list[int(level)])]
         #df1 = df1.rename(columns={'Gene1': f'level{level}', 'Gene2': f'level{level + 1}'})
         df1 = df1.rename(columns={'Gene1': f'geneA', 'Gene2': f'geneB'})
@@ -66,7 +69,7 @@ def query_proper(genes, levels, output_fp):
     return gene_list, graph
 
 def write_results(df, out):
-    #print('Writing PPIN...')
+    #logger.write('Writing PPIN...')
     os.makedirs(os.path.dirname(out), exist_ok=True)
     df.to_csv(out, sep='\t', index=False)
     
@@ -86,6 +89,13 @@ def parse_args():
 
 if __name__=='__main__':
     args = parse_args()
-    genes = parse_eqtls(args.input)
-    gene_list, graph = query_proper(genes, args.levels, args.output)
-
+    start_time = time.time()
+    os.makedirs(args.output, exist_ok=True)
+    logger = logger.Logger(logfile=os.path.join(args.output, 'query_proper.log'))
+    logger.write('SETTINGS\n========')
+    for arg in vars(args):
+        logger.write(f'{arg}:\t {getattr(args, arg)}')
+    genes = parse_eqtls(args.genes, logger)
+    gene_list, graph = query_proper(genes, args.levels, args.output, logger)
+    logger.write('Done.')
+    logger.write(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')

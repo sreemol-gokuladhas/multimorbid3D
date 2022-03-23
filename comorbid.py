@@ -19,20 +19,20 @@ import query_string
 import query_proper
 import get_ppi_eqtls
 import find_snp_disease
+import logger
 
 
-
-def write_results(df, output_fp):
+def write_results(df, output_fp, logger):
     out_dir = os.path.dirname(output_fp)
     os.makedirs(out_dir, exist_ok=True)
-    print('Writing output...')
+    logger.write('Writing output...')
     df.to_csv(output_fp, sep='\t', index=False)
 
 
 
 def parse_input(inputs):
     '''Return a dataframe of gene input.'''
-    print('Parsing input...')
+    logger.write('Parsing input...')
     df = pd.DataFrame()
     if os.path.isfile(inputs[0]): # Input is file.
         df = pd.read_csv(inputs[0], sep='\t')
@@ -78,11 +78,14 @@ def parse_args():
         '-l', '--levels', default=1, type=int,
         help='Path length (i.e. number of nodes) to query. Default: 1')
     parser.add_argument(
-        '--ppin', required=True, choices=['string', 'proper'],
+        '-p', '--ppin', required=True, choices=['string', 'proper'],
         help='''The protein-protein-interaction data to use.''')
     parser.add_argument(
         '--string-score', default=0.7, type=float,
         help='Cut-off score for STRING interactions. Default: 0.7')
+    parser.add_argument(
+        '--bootstrap', default=False, action='store_true',
+        help='Perform a bootstrap. Default: False')
     parser.add_argument(
         '--bootstraps', default=1000, type=int,
         help='Number of bootstrap datasets. Default: 1000')
@@ -104,20 +107,20 @@ def parse_args():
     parser.add_argument(
         '-w', '--window', default=5000, type=int,
         help='The genomic window (+ or - in bases) within which proxies are searched.')
-    parser.add_argument('-p', '--population', default='EUR',
-                        choices=['EUR'],
-                        help='The ancestral population in which the LD is calculated.')
+    parser.add_argument(
+         '--population', default='EUR', choices=['EUR'],
+        help='The ancestral population in which the LD is calculated.')
     parser.add_argument('--ld-dir', default='data/ld/dbs/super_pop/',
                         help='Directory containing LD database.')
     return parser.parse_args()
 
 def parse_snps(snp_arg, trait_arg, pmid_arg, gwas, grn, output_dir,
                non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
-               ld, corr_thresh, window, population, ld_dir):
+               ld, corr_thresh, window, population, ld_dir, logger):
     if (snp_arg and trait_arg) or (snp_arg and pmid_arg) or (trait_arg and pmid_arg):
         sys.exit('Only one of --snps, --trait, or --pmid is required.\nExiting.')
     snps = pd.DataFrame()
-    print('Parsing SNP input...')
+    logger.write('Parsing SNP input...')
     if snp_arg:
         if os.path.isfile(snp_arg[0]):
             df = pd.read_csv(snp_arg[0], sep='\t')
@@ -131,11 +134,11 @@ def parse_snps(snp_arg, trait_arg, pmid_arg, gwas, grn, output_dir,
         snps = query_grn.extract_pmid_snps(pmid_arg, gwas)
     eqtls = query_grn.get_eqtls(snps, grn, output_dir,
                                 non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
-                                ld, corr_thresh, window, population, ld_dir)
+                                ld, corr_thresh, window, population, ld_dir, logger)
     return snps, eqtls
 
-def parse_genes(genes_args):
-    print('Parsing gene input...')
+def parse_genes(genes_args, logger):
+    logger.write('Parsing gene input...')
     df = pd.DataFrame()
     if os.path.isfile(genes_args[0]):
         df = pd.read_csv(genes_args[0], sep='\t')
@@ -151,34 +154,41 @@ def join_path(*args):
         fp = os.path.join(fp, arg)
     return fp
 
-def pipeline(genes, gwas, output_dir, args, bootstrap=False):
+def pipeline(genes, gwas, output_dir, args, logger, bootstrap=False):
     # PPIN
     gene_list = []
     graph = pd.DataFrame()
+    if not bootstrap:
+        logger.write('Identifying protein interactions...')
     if args.ppin == 'string':
         gene_list, graph = query_string.query_string(
-            genes, args.levels, args.string_score, join_path(output_dir, 'ppin.txt'))
+            genes, args.levels, args.string_score, join_path(output_dir, 'ppin.txt'),
+            logger)
     else:
         gene_list, graph = query_proper.query_proper(
-            genes, args.levels, join_path(output_dir, 'ppin.txt'))
+            genes, args.levels, join_path(output_dir, 'ppin.txt'), logger)
     if graph.empty:
         return pd.DataFrame()
     # PPIN eQTLs
+    if not bootstrap:
+        logger.write('Identifying gene eQTLs...')
     ppin_eqtls = query_grn.get_gene_eqtls(
         gene_list, grn, args.output_dir,
         args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir,
-        bootstrap=bootstrap)
+        logger, bootstrap=bootstrap)
     # Traits
+    if not bootstrap:
+        logger.write('Identifying GWAS traits...')
     sig_res = find_snp_disease.find_disease(
         gwas, output_dir, output_dir, args.ld, args.correlation_threshold,
-        args.window, args.population, args.ld_dir, bootstrap=bootstrap)
+        args.window, args.population, args.ld_dir, logger, bootstrap=bootstrap)
     return sig_res
 
 def prep_bootstrap(sim, gene_num, sims_dir, res_dict, grn_genes, gwas, args):
     sim_output_dir = join_path(sims_dir, sim)
     sim_genes = pd.DataFrame(
         {'gene': grn_genes.sample(gene_num, random_state=int(sim)).tolist()})
-    sim_res = pipeline(sim_genes, gwas, sim_output_dir, args, bootstrap=True)
+    sim_res = pipeline(sim_genes, gwas, sim_output_dir, args, logger, bootstrap=True)
     if sim_res is None:
         return
     for i, row in sim_res.iterrows():
@@ -189,6 +199,7 @@ def prep_bootstrap(sim, gene_num, sims_dir, res_dict, grn_genes, gwas, args):
             pass
             
 def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
+    logger.write('Preparing simulations...')
     gene_num = genes[genes['gene'].isin(grn['gene'])]['gene'].nunique()
     sims_dir = join_path(args.output_dir, 'bootstrap')
     manager = mp.Manager()
@@ -202,7 +213,7 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
     sims = [str(i) for i in range(num_sims)]
     '''
     for sim in sims:
-        print(sim)
+        logger.write(sim)
         prep_bootstrap(
             sim, gene_num, sims_dir, res_dict,
             grn['gene'].drop_duplicates(), gwas, args)
@@ -235,7 +246,7 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
         ks = k.split('__')
         sim_df.append([ks[0], ks[1], res_dict[k]])
     if len(sim_df) == 0:
-        print('Warning: No output for simulations.')
+        logger.write('Warning: No output for simulations.')
         return
     sim_df = pd.DataFrame(sim_df, columns=['level', 'trait', 'sim_count'])
     # Using (count + 1) / (num_sims +1) See https://doi.org/10.1086/341527
@@ -245,7 +256,9 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
            .fillna(0)
     )
     shutil.rmtree(sims_dir)
-    write_results(res, join_path(args.output_dir, 'significant_enrichment_bootstrap.txt'))
+    write_results(res,
+                  join_path(args.output_dir, 'significant_enrichment_bootstrap.txt'),
+                  logger)
     
         
 if __name__=='__main__':
@@ -254,24 +267,36 @@ if __name__=='__main__':
     if not args.genes and not args.snps and not args.trait and not args.pmid:
         sys.exit('FATAL: One of --genes, --snps, --trait, or --pmid is required.\nExiting.')
     start_time = time.time()
-
     if args.genes and (args.snps or args.trait or args.pmid):
         sys.exit('Only one of --genes, --snps, --trait, or --pmid is required.\nExiting.')
-    gwas = query_grn.parse_gwas(args.gwas)
-    grn = query_grn.parse_grn(args.grn_dir)
+    os.makedirs(args.output_dir, exist_ok=True)
+    global logger
+    logger = logger.Logger(logfile=os.path.join(args.output_dir, 'comorbid.log'))
+    logger.write('SETTINGS\n========')
+    for arg in vars(args):
+        logger.write(f'{arg}:\t {getattr(args, arg)}')
+    logger.write('\n')
+    gwas = query_grn.parse_gwas(args.gwas, logger)
+    grn = query_grn.parse_grn(args.grn_dir, logger)
     snps = []
-    genes = []
+    genes = pd.DataFrame()
     if args.genes:
-        genes = parse_genes(args.genes)
+        genes = parse_genes(args.genes, logger)
     else:
-        snps, genes = parse_snps(args.snps, args.trait, args.pmid, gwas, grn, args.output_dir,
-                                 args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir,
-        args.ld, args.correlation_threshold, args.window, args.population, args.ld_dir)
-    sig_res = pipeline(genes, gwas, args.output_dir,  args)
+        snps, genes = parse_snps(
+            args.snps, args.trait, args.pmid, gwas, grn, args.output_dir,
+            args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir,
+            args.ld, args.correlation_threshold, args.window, args.population, args.ld_dir,
+            logger)
+        if genes.empty:
+            logger.write('Exiting: No gene targets for SNPs found.')
+            sys.exit()
+    sig_res = pipeline(genes, gwas, args.output_dir,  args, logger)
     if sig_res.empty:
-        sys.exit('Exiting: No results found.')
+        logger.write('Exiting: No results found.')
+        exit()
     # Bootstrap
-    #if args.genes:
-    bootstrap_genes(sig_res, genes, gwas, args.bootstraps, grn, args)
-    print('Done.')
-    print(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')
+    if args.bootstrap:
+        bootstrap_genes(sig_res, genes, gwas, args.bootstraps, grn, args)
+    logger.write('Done.')
+    logger.write(f'Time elapsed: {(time.time() - start_time) / 60: .2f} minutes.')
