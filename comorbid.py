@@ -127,7 +127,9 @@ def parse_snps(snp_arg, trait_arg, pmid_arg, gwas, grn, output_dir,
     logger.write('Parsing SNP input...')
     if snp_arg:
         if os.path.isfile(snp_arg[0]):
-            df = pd.read_csv(snp_arg[0], sep='\t')
+            df = pd.read_csv(snp_arg[0], sep='\t', header=None, names=['snp'])
+            df = df[df['snp'] != 'snp']
+            df['snp'] = df['snp'].str.strip()
             snps = df['snp'].drop_duplicates()
         else:
             df = pd.DataFrame({'snp':  snp_arg})

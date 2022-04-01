@@ -36,6 +36,8 @@ def parse_gwas(gwas_fp, logger):
 def parse_snp_input(snp_fp, logger):
     if os.path.isfile(snp_fp[0]):
         df = pd.read_csv(snp_fp[0], sep='\t', header=None, names=['snp'])
+        df = df[df['snp'] != "snp"]
+        df['snp'] = df['snp'].str.strip()
         return df[df['snp'] != "snp"]['snp'].drop_duplicates().tolist()
     else:
         return list(set(snp_fp))

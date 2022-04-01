@@ -20,13 +20,15 @@ def get_eqtls(snps, tissue, output_dir, non_spatial_dir, snp_ref_dir, gene_ref_d
     snp_df, failed = rsids2pos(snps, snp_ref_dir)
     if len(failed) > 0:
         merged_rsids = merged_snps(failed, snp_ref_dir)
-        merged_df, failed = rsids2pos(merged_rsids['old'].tolist(), snp_ref_dir)
-        snp_df = pd.concat([snp_df, merged_df])
-        if len(merged_rsids) > 0:
-            num_merged_rsids = merged_rsids['new'].nunique()
-            write_file(merged_rsids, os.path.join(output_dir, 'merged_snps.txt'))
-            logger.write(f'WARNING: {num_merged_rsids} SNPs have been merged. '+
-                  'See "merged_snps.txt" for details')
+        if not merged_rsids.empty:
+            merged_df, failed = rsids2pos(merged_rsids['old'].tolist(), snp_ref_dir)
+            if not merged_df.empty:
+                snp_df = pd.concat([snp_df, merged_df])
+            if len(merged_rsids) > 0:
+                num_merged_rsids = merged_rsids['new'].nunique()
+                write_file(merged_rsids, os.path.join(output_dir, 'merged_snps.txt'))
+                logger.write(f'WARNING: {num_merged_rsids} SNPs have been merged. '+
+                             'See "merged_snps.txt" for details')
         if len(failed) > 0:
             write_file(pd.DataFrame({'failed_snps': failed}),
                        os.path.join(output_dir, 'failed_snps.txt'))
@@ -271,11 +273,14 @@ def merged_snps(query_snps, ref_dir):
     snps = []
     with db.connect() as conn:
         for snp in query_snps:
-            res = pd.read_sql(sql.format(snp[2:]), conn)
-            if not res.empty:
-                snps.append(res)
+            try:
+                res = pd.read_sql(sql.format(snp[2:]), conn)
+                if not res.empty:
+                    snps.append(res)
+            except:
+                pass
     if len(snps) == 0:
-        return 
+        return pd.DataFrame()
     snps = pd.concat(snps)
     snps['new'] = 'rs' + snps['new'].astype(str)
     snps['old'] = 'rs' + snps['old'].astype(str)
