@@ -51,14 +51,17 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
         level = f"{os.path.basename(level_fp).split('.')[0].split('_')[0]}"
         #logger.write(f"\t{level}")
         df = pd.read_csv(os.path.join(ppin_dir, level_fp), sep='\t')
+        if df.empty:
+            continue
         snps = df['snp'].drop_duplicates().tolist()
         if ld:
             ld_snps = ld_proxy.ld_proxy(snps, corr_thresh, window, population, ld_dir, bootstrap)
-            snps = ld_snps['rsidt'].drop_duplicates().tolist()
-            df = (df.merge(ld_snps, left_on='snp', right_on='rsidq')
-                  .sort_values(by=['snp', 'gene', 'dprime'])
-                  .drop_duplicates(subset=['snp', 'gene', 'dprime']))
-            write_results(df,  f'{level}_snp_gene.txt', out)
+            if not ld_snps.empty:
+                snps = ld_snps['rsidt'].drop_duplicates().tolist()
+                df = (df.merge(ld_snps, left_on='snp', right_on='rsidq')
+                      .sort_values(by=['snp', 'gene', 'dprime'])
+                      .drop_duplicates(subset=['snp', 'gene', 'dprime']))
+                write_results(df,  f'{level}_snp_gene.txt', out)
         overlap = gwas.loc[gwas['SNPS'].isin(snps)].drop_duplicates()
         # Total level eQTLs that are in the GWAS Catalog. 
         N = overlap['SNPS'].nunique()

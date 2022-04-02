@@ -196,14 +196,7 @@ def get_cis_gene_eqtls(genes, tissue, non_spatial_dir, gene_ref_dir,
     res['snp_locus'] = res['variant_id'].apply(lambda x: int(x.split('_')[1]))
     snps = pos2rsids(res[['snp_chr', 'snp_locus']].drop_duplicates(),
                      snp_ref_dir, bootstrap)
-    try:
-        res = res.merge(snps, how='inner', on=['snp_chr', 'snp_locus'])
-    except:
-        print(res)
-        print(snps)
-        print(res.columns)
-        print(snps.columns)
-        exit()
+    res = res.merge(snps, how='inner', on=['snp_chr', 'snp_locus'])
     res['tissue'] = tissue
     res['interaction_type'] = 'Cis'
     res['eqtl_type'] = 'non_spatial'
