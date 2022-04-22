@@ -44,9 +44,10 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
                  logger, disable_pg=True, bootstrap=False):
     #logger.write('Identifying GWAS traits.')
     sig_res = []
+    probs_res = []
     eqtl_fps = [fp for fp in sorted(os.listdir(ppin_dir)) if fp.endswith('snp_gene.txt')]
     # Total GWAS SNPs.
-    M = gwas['SNPS'].nunique()
+    M = gwas[gwas['SNPS']]['SNPS'].nunique()
     for level_fp in eqtl_fps:
         level = f"{os.path.basename(level_fp).split('.')[0].split('_')[0]}"
         #logger.write(f"\t{level}")
@@ -81,6 +82,7 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
         probs_cols = ['level', 'trait', 'total_gwas_snps', 'trait_snps',
                       'eqtls_in_catalog', 'trait_eqtls', 'pval']
         probs_df = pd.DataFrame(probs_df, columns=probs_cols)
+        probs_res.append(probs_df)
         try:
             probs_df['adj_pval'] = mt.multipletests(probs_df['pval'], method='bonferroni')[1]
         except:
@@ -99,9 +101,13 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
         else:
             write_results(snp_trait_df.merge(df, how='inner'), f'{level}_sig_interactions.txt', out)
         write_results(probs_df,  f'{level}_enrichment.txt', out)
+    if len(probs_res) > 0:
+        probs_res = pd.concat(probs_res)
+        write_results(probs_res, 'enrichment.txt',  out)
     if len(sig_res) == 0:
         return
     sig_res = pd.concat(sig_res)
+
     write_results(sig_res, 'significant_enrichment.txt',  out)
     return sig_res
 

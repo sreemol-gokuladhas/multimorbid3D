@@ -54,9 +54,11 @@ def clean_snp_ids(snp_id):
             return f"rs{snp_id}" if not snp_id[:-1].isdigit() else f"rs{snp_id[:-1]}"
 
 def extract_trait_snps(trait, gwas, logger):
+    logger.write(f'Extracting SNPs from trait entries with the word "{trait}"')
     return gwas[gwas['DISEASE/TRAIT'] == trait]['SNPS'].drop_duplicates()
 
 def extract_pmid_snps(pmid, gwas, logger):
+    logger.write(f'Extracting SNPs from PubMed ID {pmid}')
     return gwas[gwas['PUBMEDID'] == int(pmid)]['SNPS'].drop_duplicates()
 
 def parse_grn(grn_dir, logger):
@@ -98,6 +100,7 @@ def get_gene_eqtls(gene_list, grn, output_dir,
                    non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
                    logger, bootstrap=False):
     #logger.write('Identifying gene eQTLs...')
+    res = []
     for level in range(len(gene_list)):
         constrained_eqtls = (
             grn[grn['gene'].isin(gene_list[level])][['snp', 'gene']]
@@ -118,7 +121,8 @@ def get_gene_eqtls(gene_list, grn, output_dir,
         df = df.drop_duplicates()
         write_results(df,
                       os.path.join(output_dir, f'level{level}_snp_gene.txt'))
-
+        res.append(df)
+    return pd.concat(res)
         
 
 def write_results(res, fp):

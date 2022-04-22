@@ -135,9 +135,9 @@ def parse_snps(snp_arg, trait_arg, pmid_arg, gwas, grn, output_dir,
             df = pd.DataFrame({'snp':  snp_arg})
             snps = df['snp'].drop_duplicates()
     elif trait_arg:
-        snps = query_grn.extract_trait_snps(trait_arg, gwas)
+        snps = query_grn.extract_trait_snps(trait_arg, gwas, logger)
     elif pmid_arg:
-        snps = query_grn.extract_pmid_snps(pmid_arg, gwas)
+        snps = query_grn.extract_pmid_snps(pmid_arg, gwas, logger)
     eqtls = query_grn.get_eqtls(snps, grn, output_dir,
                                 non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
                                 ld, corr_thresh, window, population, ld_dir, logger)
@@ -179,7 +179,7 @@ def pipeline(genes, gwas, output_dir, args, logger, bootstrap=False):
     if not bootstrap:
         logger.write('Identifying gene eQTLs...')
     ppin_eqtls = query_grn.get_gene_eqtls(
-        gene_list, grn, args.output_dir,
+        gene_list, grn, output_dir,
         args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir,
         logger, bootstrap=bootstrap)
     # Traits
@@ -197,6 +197,8 @@ def prep_bootstrap(sim, gene_num, sims_dir, res_dict, grn_genes, gwas, args):
     sim_res = pipeline(sim_genes, gwas, sim_output_dir, args, logger, bootstrap=True)
     if sim_res is None:
         return
+    sim_res.to_csv(os.path.join(sim_output_dir, 'significant_enrichment.txt'),
+                   sep='\t', index=False)
     for i, row in sim_res.iterrows():
         k = row['level'] + '__' + row['trait']
         try:
@@ -219,16 +221,11 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
     sims = [str(i) for i in range(num_sims)]
     '''
     for sim in sims:
-        logger.write(sim)
+        #logger.write(sim)
         prep_bootstrap(
             sim, gene_num, sims_dir, res_dict,
             grn['gene'].drop_duplicates(), gwas, args)
-    if args.ld or args.non_spatial:
-        for sim in sims:
-            prep_bootstrap(
-                sim, gene_num, sims_dir, res_dict,
-                grn['gene'].drop_duplicates(), gwas, args)
-    else:
+
     '''    
     with mp.Pool(16) as pool:
         for _  in tqdm(
@@ -256,7 +253,7 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
         return
     sim_df = pd.DataFrame(sim_df, columns=['level', 'trait', 'sim_count'])
     # Using (count + 1) / (num_sims +1) See https://doi.org/10.1086/341527
-    sim_df['sim_pval'] = (sim_df['sim_count'] + 1) / (num_sims + 1)
+    sim_df['sim_pval'] = round((sim_df['sim_count'] + 1) / (num_sims + 1), 3)
     res = (sig_res
            .merge(sim_df, on=['level', 'trait'], how='left')
            .fillna(0)
@@ -282,8 +279,8 @@ if __name__=='__main__':
     for arg in vars(args):
         logger.write(f'{arg}:\t {getattr(args, arg)}')
     logger.write('\n')
-    gwas = query_grn.parse_gwas(args.gwas, logger)
     grn = query_grn.parse_grn(args.grn_dir, logger)
+    gwas = query_grn.parse_gwas(args.gwas, logger)
     snps = []
     genes = pd.DataFrame()
     if args.genes:

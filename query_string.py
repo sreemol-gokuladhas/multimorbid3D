@@ -45,6 +45,8 @@ def get_string_interaction_partners(genes, score_cutoff, level):
         time.sleep(1)
         inp = StringIO(res.text.strip(), newline="\n")
         df = pd.read_csv(inp, sep="\t")
+        if df.empty:
+            continue
         df = df[['stringId_A', 'stringId_B', 'preferredName_A', 'preferredName_B', 'score']]
         df = df[df.score >= score_cutoff]
         interactions.append(df)
