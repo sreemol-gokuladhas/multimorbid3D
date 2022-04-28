@@ -15,6 +15,7 @@ from tqdm import tqdm
 from itertools import repeat
 
 import query_grn
+import ppin
 import query_string
 import query_proper
 import get_ppi_eqtls
@@ -78,8 +79,10 @@ def parse_args():
         '-l', '--levels', default=1, type=int,
         help='Path length (i.e. number of nodes) to query. Default = 1')
     parser.add_argument(
-        '-p', '--ppin', required=True, choices=['string', 'proper'],
-        help='''The protein-protein-interaction data to use.''')
+        '-p', '--ppin', nargs='+', default=['string', 'proper'],
+        choices=['string', 'proper'],
+        help='''The protein-protein-interaction database(s) to use.
+        Default: ['string', 'proper']''')
     parser.add_argument(
         '--string-score', default=0.7, type=float,
         help='Cut-off score for STRING interactions. Default = 0.7')
@@ -166,6 +169,9 @@ def pipeline(genes, gwas, output_dir, args, logger, bootstrap=False):
     graph = pd.DataFrame()
     if not bootstrap:
         logger.write('Identifying protein interactions...')
+    gene_list = ppin.make_ppin(
+        genes, args.levels, output_dir, args.ppin, args.string_score, logger, bootstrap=bootstrap)
+    '''
     if args.ppin == 'string':
         gene_list, graph = query_string.query_string(
             genes, args.levels, args.string_score, join_path(output_dir, 'ppin.txt'),
@@ -173,12 +179,13 @@ def pipeline(genes, gwas, output_dir, args, logger, bootstrap=False):
     else:
         gene_list, graph = query_proper.query_proper(
             genes, args.levels, join_path(output_dir, 'ppin.txt'), logger)
-    if graph.empty:
+    '''
+    if sum([len(level) for level in gene_list]) == 0:
         return pd.DataFrame()
     # PPIN eQTLs
     if not bootstrap:
         logger.write('Identifying gene eQTLs...')
-    ppin_eqtls = query_grn.get_gene_eqtls(
+    query_grn.get_gene_eqtls(
         gene_list, grn, output_dir,
         args.non_spatial, args.non_spatial_dir, args.snp_ref_dir, args.gene_ref_dir,
         logger, bootstrap=bootstrap)
@@ -195,17 +202,20 @@ def prep_bootstrap(sim, gene_num, sims_dir, res_dict, grn_genes, gwas, args):
     sim_genes = pd.DataFrame(
         {'gene': grn_genes.sample(gene_num, random_state=int(sim)).tolist()})
     sim_res = pipeline(sim_genes, gwas, sim_output_dir, args, logger, bootstrap=True)
-    if sim_res is None:
-        return
-    sim_res.to_csv(os.path.join(sim_output_dir, 'significant_enrichment.txt'),
-                   sep='\t', index=False)
-    for i, row in sim_res.iterrows():
-        k = row['level'] + '__' + row['trait']
-        try:
-            res_dict[k] += 1
-        except:
-            pass
-            
+    if not sim_res is None:
+        for i, row in sim_res.iterrows():
+            k = row['level'] + '__' + row['trait']
+            try:
+                res_dict[k] += 1
+            except:
+                pass
+        '''
+        if not sim_res.empty:
+            sim_res.to_csv(os.path.join(sim_output_dir, 'significant_enrichment.txt'),
+                           sep='\t', index=False)
+        '''
+
+        
 def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
     logger.write('Preparing simulations...')
     gene_num = genes[genes['gene'].isin(grn['gene'])]['gene'].nunique()
@@ -219,31 +229,34 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
     desc = 'Boostrapping'
     bar_format = '{desc}: {percentage:3.0f}% |{bar}| {n_fmt}/{total_fmt} {unit}'
     sims = [str(i) for i in range(num_sims)]
-    '''
-    for sim in sims:
-        #logger.write(sim)
-        prep_bootstrap(
-            sim, gene_num, sims_dir, res_dict,
-            grn['gene'].drop_duplicates(), gwas, args)
-
-    '''    
-    with mp.Pool(16) as pool:
-        for _  in tqdm(
-                pool.istarmap(
-                    prep_bootstrap,
-                    zip(
-                        sims,
-                        repeat(gene_num),
-                        repeat(sims_dir),
-                        repeat(res_dict),
-                        repeat(grn['gene'].drop_duplicates()),
-                        repeat(gwas),
-                        repeat(args))
-                ),
+    if args.ld:
+        for sim in tqdm(
+                sims,
                 total=len(sims), desc=desc, bar_format=bar_format,
                 unit='simulations', ncols=80
         ):
-            pass
+            #logger.write(sim)
+            prep_bootstrap(
+                sim, gene_num, sims_dir, res_dict,
+                grn['gene'].drop_duplicates(), gwas, args)
+    else:
+        with mp.Pool(4) as pool:
+            for _  in tqdm(
+                    pool.istarmap(
+                        prep_bootstrap,
+                        zip(
+                            sims,
+                            repeat(gene_num),
+                            repeat(sims_dir),
+                            repeat(res_dict),
+                            repeat(grn['gene'].drop_duplicates()),
+                            repeat(gwas),
+                            repeat(args))
+                    ),
+                    total=len(sims), desc=desc, bar_format=bar_format,
+                    unit='simulations', ncols=80
+            ):
+                pass
     sim_df = []
     for k in res_dict:
         ks = k.split('__')
@@ -295,6 +308,7 @@ if __name__=='__main__':
             logger.write('Exiting: No gene targets for SNPs found.')
             sys.exit()
     sig_res = pipeline(genes, gwas, args.output_dir,  args, logger)
+    write_results(sig_res, os.path.join(args.output_dir, 'significant_enrichment.txt'), logger)
     if sig_res.empty:
         logger.write('Exiting: No results found.')
         exit()

@@ -73,9 +73,9 @@ def parse_grn(grn_dir, logger):
     
 def get_eqtls(snps, grn, output_dir,
               non_spatial, non_spatial_dir, snp_ref_dir, gene_ref_dir,
-              ld, corr_thresh, window, population, ld_dir, logger):
+              ld, corr_thresh, window, population, ld_dir, logger, bootstrap=False):
     if ld:
-        ld_snps = ld_proxy.ld_proxy(snps, corr_thresh, window, population, ld_dir, logger)
+        ld_snps = ld_proxy.ld_proxy(snps, corr_thresh, window, population, ld_dir, logger, bootstrap)
         snps = ld_snps['rsidt'].drop_duplicates()
         write_results(ld_snps, os.path.join(output_dir, 'query_snp_ld.txt'))
     constrained_eqtls = grn[grn['snp'].isin(snps)]
@@ -121,8 +121,9 @@ def get_gene_eqtls(gene_list, grn, output_dir,
         df = df.drop_duplicates()
         write_results(df,
                       os.path.join(output_dir, f'level{level}_snp_gene.txt'))
-        res.append(df)
-    return pd.concat(res)
+        del df
+        #res.append(df)
+    #return pd.concat(res)
         
 
 def write_results(res, fp):

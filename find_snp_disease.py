@@ -47,7 +47,7 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
     probs_res = []
     eqtl_fps = [fp for fp in sorted(os.listdir(ppin_dir)) if fp.endswith('snp_gene.txt')]
     # Total GWAS SNPs.
-    M = gwas[gwas['SNPS']]['SNPS'].nunique()
+    M = gwas['SNPS'].nunique()
     for level_fp in eqtl_fps:
         level = f"{os.path.basename(level_fp).split('.')[0].split('_')[0]}"
         #logger.write(f"\t{level}")
@@ -56,7 +56,7 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
             continue
         snps = df['snp'].drop_duplicates().tolist()
         if ld:
-            ld_snps = ld_proxy.ld_proxy(snps, corr_thresh, window, population, ld_dir, bootstrap)
+            ld_snps = ld_proxy.ld_proxy(snps, corr_thresh, window, population, ld_dir, logger, bootstrap)
             if not ld_snps.empty:
                 snps = ld_snps['rsidt'].drop_duplicates().tolist()
                 df = (df.merge(ld_snps, left_on='snp', right_on='rsidq')
@@ -76,6 +76,7 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
             trait_overlap = overlap[overlap['DISEASE/TRAIT'] == trait][['SNPS', 'DISEASE/TRAIT']]
             # Total trait-associated eQTLs
             X = trait_overlap['SNPS'].nunique()
+            # See https://alexlenail.medium.com/understanding-and-implementing-the-hypergeometric-test-in-python-a7db688a7458
             pval = hypergeom.sf(X-1, M, n, N)
             probs_df.append((level, trait, M, n, N, X, pval))
             snp_trait_df.append(trait_overlap.drop_duplicates())
@@ -93,22 +94,25 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
         snp_trait_df = snp_trait_df.rename(columns={'DISEASE/TRAIT': 'trait',
                                                     'SNPS': 'snp'})
         snp_trait_df = snp_trait_df[snp_trait_df['trait'].isin(sig_df['trait'])]
-        if ld:
-            write_results(
-                snp_trait_df.merge(df.drop(columns=['snp']),
-                                   how='inner', left_on='snp', right_on='rsidt'),
-                f'{level}_sig_interactions.txt', out)
-        else:
-            write_results(snp_trait_df.merge(df, how='inner'), f'{level}_sig_interactions.txt', out)
-        write_results(probs_df,  f'{level}_enrichment.txt', out)
-    if len(probs_res) > 0:
+        if not bootstrap:
+            if ld:
+                write_results(
+                    snp_trait_df.merge(df.drop(columns=['snp']),
+                                       how='inner', left_on='snp', right_on='rsidt'),
+                    f'{level}_sig_interactions.txt', out)
+            else:
+                write_results(
+                    snp_trait_df.merge(df, how='inner'),
+                    f'{level}_sig_interactions.txt', out)
+            write_results(probs_df,  f'{level}_enrichment.txt', out)
+    if len(probs_res) > 0 and not bootstrap:
         probs_res = pd.concat(probs_res)
         write_results(probs_res, 'enrichment.txt',  out)
     if len(sig_res) == 0:
         return
     sig_res = pd.concat(sig_res)
-
-    write_results(sig_res, 'significant_enrichment.txt',  out)
+    if not bootstrap:
+        write_results(sig_res, 'significant_enrichment.txt',  out)
     return sig_res
 
 def write_results(res, fp, out):

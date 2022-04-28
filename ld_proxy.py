@@ -8,6 +8,7 @@ from sqlalchemy.pool import NullPool
 import sys
 import os
 import argparse
+from tqdm import tqdm
 
 import logger
 
@@ -19,7 +20,7 @@ def parse_snps(snps_input, logger):
     else:
         return pd.DataFrame({'snp': snps_input})
 
-def ld_proxy_chrom(chrom, query_snps, chrom_dict, corr_thresh, window, pop, ld_dir):
+def ld_proxy_chrom(chrom, query_snps, corr_thresh, window, pop, ld_dir):
     pd.options.mode.chained_assignment = None
     db = create_engine(f'sqlite:///{ld_dir}/{chrom}.db', 
                        echo=False, poolclass=NullPool)
@@ -47,27 +48,31 @@ def ld_proxy_chrom(chrom, query_snps, chrom_dict, corr_thresh, window, pop, ld_d
            )
     chrom_dict[chrom] = snps[['chromq',	'posq', 'rsidq', 'chromt', 'post', 'rsidt', 'corr','dprime']]
 
-def ld_proxy(query_snps, corr_thresh, window, pop, ld_dir, logger, bootstrap=False):
+def ld_proxy(query_snps, corr_thresh, window, pop, ld_dir, logger, bootstrap):
     ld_dir = os.path.join(ld_dir, pop)
-
     chrom_list = [fp.split('.')[0] for fp in os.listdir(ld_dir) if fp.startswith('chr')]
+    global chrom_dict
+    '''
+    if bootstrap == True:
+        chrom_dict = {}
+        for chrom in chrom_list:
+            chrom_dict[chrom] = pd.DataFrame()
+            ld_proxy_chrom(chrom, query_snps, corr_thresh, window, pop, ld_dir)
+    else:
+    '''
     manager = mp.Manager()
     chrom_dict = manager.dict()
     for chrom in chrom_list:
         chrom_dict[chrom] = pd.DataFrame()
-    if bootstrap:
-        for chrom in chrom_list:
-            ld_proxy_chrom(chrom, query_snps, chrom_dict, corr_thresh, window, pop, ld_dir)
-    else:
-        with mp.Pool(16) as pool:
-            pool.starmap(ld_proxy_chrom,
-                         zip(chrom_list,
-                            repeat(query_snps),
-                            repeat(chrom_dict),
-                            repeat(corr_thresh),
-                            repeat(window),
-                            repeat(pop),
-                            repeat(ld_dir)))
+    with mp.Pool(16) as pool:
+        pool.starmap(ld_proxy_chrom,
+                     zip(chrom_list,
+                        repeat(query_snps),
+                        #repeat(chrom_dict),
+                        repeat(corr_thresh),
+                        repeat(window),
+                        repeat(pop),
+                        repeat(ld_dir)))
     df = []
     for chrom in chrom_dict.keys():
         df.append(chrom_dict[chrom])
