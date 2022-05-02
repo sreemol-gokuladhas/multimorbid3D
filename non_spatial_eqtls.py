@@ -249,13 +249,12 @@ def rsids2pos_chrom(chrom, query_snps, chrom_dict, ref_dir):
     snps = []
     with db.connect() as conn:
         for snp in query_snps:
-            res = pd.read_sql(sql.format(snp), conn)
+            res = pd.read_sql(sql.format(snp.strip()), conn)
             if not res.empty:
                 snps.append(res)
-    if len(snps) == 0:
-        return 
-    snps = pd.concat(snps)
-    chrom_dict[chrom] = snps
+    if len(snps) > 0:
+        snps = pd.concat(snps)
+        chrom_dict[chrom] = snps
 
 def merged_snps(query_snps, ref_dir):
     pd.options.mode.chained_assignment = None

@@ -183,17 +183,18 @@ def make_ppin(gene_df, levels, output_dir, ppin_db, score, logger, bootstrap=Fal
             gene_list.append([])
             continue
         level_df['level'] = level
-        graph.append(level_df)
+        if not bootstrap:
+            graph.append(level_df)
         for i in range(len(gene_list)):
             level_df = level_df[~(level_df[f'geneB'].isin(gene_list[i]))]
         gene_list.append(level_df[f'geneB'].drop_duplicates().tolist())
-    if len(graph) == 0:
-        return gene_list, pd.DataFrame(columns=['geneA', 'geneB'])
     if not bootstrap:
+        if len(graph) == 0:
+            return gene_list, pd.DataFrame(columns=['geneA', 'geneB'])
         graph = pd.concat(graph)
         write_results(graph.drop_duplicates(),
                       os.path.join(output_dir, 'graph.txt'))
-    del graph
+        del graph
     for level in range(len(gene_list)):
         write_results(pd.DataFrame({'gene': gene_list[level]}),
                       os.path.join(output_dir, f'level{level}_genes.txt'))

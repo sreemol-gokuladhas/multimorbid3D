@@ -11,7 +11,7 @@ PARAMS = {
 
 def get_params(gene_list):
     params = PARAMS
-    params["identifiers"] = "\r".join(gene_list)
+    params["identifiers"] = "\r".join([str(gene) for gene in gene_list])
     return params
 
 def get_request_ids_url():
