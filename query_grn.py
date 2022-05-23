@@ -54,8 +54,26 @@ def clean_snp_ids(snp_id):
             return f"rs{snp_id}" if not snp_id[:-1].isdigit() else f"rs{snp_id[:-1]}"
 
 def extract_trait_snps(trait, gwas, logger):
-    logger.write(f'Extracting SNPs from trait entries with the word "{trait}"')
-    return gwas[gwas['DISEASE/TRAIT'] == trait]['SNPS'].drop_duplicates()
+    traits = (gwas[gwas['DISEASE/TRAIT'].str.lower().str.contains(trait.lower())]['DISEASE/TRAIT']
+              .drop_duplicates().tolist())
+    logger.write('We found the following similar traits in the GWAS Catalog:')
+    for idx, t in enumerate(traits):
+        logger.write(f'{idx + 1}\t{t}')
+    idx = input('\nEnter the number of your trait of interest:  ')
+    trait_chosen = ''
+    try:
+        trait_chosen = traits[int(idx) - 1]
+    except:
+        logger.write('\nEnter a valid number from the displayed trait list.')
+        sys.exit('Exiting.')
+    '''
+    upsert = input('\nWARNING: Do you wish to continue with all the traits above? [y/N] ')
+    if not upsert.lower() == 'y' or len(traits) > 1:
+        logger.write('\nEnter the exact trait you want using the "--trait" flag.')
+        sys.exit('Exiting.')
+    '''
+    logger.write(f'Extracting SNPs associated with "{trait}"')
+    return gwas[gwas['DISEASE/TRAIT'] == trait_chosen]['SNPS'].drop_duplicates()
 
 def extract_pmid_snps(pmid, gwas, logger):
     logger.write(f'Extracting SNPs from PubMed ID {pmid}')

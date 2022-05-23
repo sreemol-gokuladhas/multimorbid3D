@@ -93,6 +93,9 @@ def parse_args():
         '--bootstraps', default=1000, type=int,
         help='Number of bootstrap datasets. Default: 1000')
     parser.add_argument(
+        '--keep-bootstraps', action='store_true', default=False,
+        help='Keep bootstrap results. Default: False ')
+    parser.add_argument(
         '--non-spatial', action='store_true', default=False,
         help='Include non-spatial eQTLs. Default = False')
     parser.add_argument(
@@ -171,15 +174,6 @@ def pipeline(genes, gwas, output_dir, args, logger, bootstrap=False):
         logger.write('Identifying protein interactions...')
     gene_list = ppin.make_ppin(
         genes, args.levels, output_dir, args.ppin, args.string_score, logger, bootstrap=bootstrap)
-    '''
-    if args.ppin == 'string':
-        gene_list, graph = query_string.query_string(
-            genes, args.levels, args.string_score, join_path(output_dir, 'ppin.txt'),
-            logger)
-    else:
-        gene_list, graph = query_proper.query_proper(
-            genes, args.levels, join_path(output_dir, 'ppin.txt'), logger)
-    '''
     if sum([len(level) for level in gene_list]) == 0:
         return pd.DataFrame()
     # PPIN eQTLs
@@ -209,13 +203,8 @@ def prep_bootstrap(sim, gene_num, sims_dir, res_dict, grn_genes, gwas, args):
                 res_dict[k] += 1
             except:
                 pass
-        '''
-        if not sim_res.empty:
-            sim_res.to_csv(os.path.join(sim_output_dir, 'significant_enrichment.txt'),
-                           sep='\t', index=False)
-        '''
 
-        
+            
 def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
     logger.write('Preparing simulations...')
     gene_num = genes[genes['gene'].isin(grn['gene'])]['gene'].nunique()
@@ -271,7 +260,8 @@ def bootstrap_genes(sig_res, genes, gwas, num_sims, grn, args):
            .merge(sim_df, on=['level', 'trait'], how='left')
            .fillna(0)
     )
-    shutil.rmtree(sims_dir)
+    if not args.keep_bootstraps:
+        shutil.rmtree(sims_dir)
     write_results(res,
                   join_path(args.output_dir, 'significant_enrichment_bootstrap.txt'),
                   logger)

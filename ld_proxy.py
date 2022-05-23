@@ -80,7 +80,10 @@ def ld_proxy(query_snps, corr_thresh, window, pop, ld_dir, logger, bootstrap):
     df = []
     for chrom in chrom_dict.keys():
         df.append(chrom_dict[chrom])
-    df = pd.concat(df)
+    if len(df) == 0:
+        df = pd.DataFrame()
+    else:
+        df = pd.concat(df)
     query_snps_df = pd.DataFrame({'chromq': '',
                         'posq': '',
                         'rsidq': query_snps,

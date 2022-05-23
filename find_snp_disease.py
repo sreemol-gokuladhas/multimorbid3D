@@ -46,6 +46,8 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
     sig_res = []
     probs_res = []
     eqtl_fps = [fp for fp in sorted(os.listdir(ppin_dir)) if fp.endswith('snp_gene.txt')]
+    cols = ['level', 'trait', 'total_gwas_snps', 'trait_snps',
+                  'eqtls_in_catalog', 'trait_eqtls', 'pval']
     # Total GWAS SNPs.
     M = gwas['SNPS'].nunique()
     for level_fp in eqtl_fps:
@@ -70,7 +72,6 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
         snp_trait_df = []
         for trait in tqdm(overlap['DISEASE/TRAIT'].drop_duplicates(),
                           disable=disable_pg):
-            #logger.write(f'\t\t{trait}')
             # Total trait-associated SNPs in GWAS Catalog 
             n = gwas[gwas['DISEASE/TRAIT']==trait]['SNPS'].nunique()
             trait_overlap = overlap[overlap['DISEASE/TRAIT'] == trait][['SNPS', 'DISEASE/TRAIT']]
@@ -80,9 +81,7 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
             pval = hypergeom.sf(X-1, M, n, N)
             probs_df.append((level, trait, M, n, N, X, pval))
             snp_trait_df.append(trait_overlap.drop_duplicates())
-        probs_cols = ['level', 'trait', 'total_gwas_snps', 'trait_snps',
-                      'eqtls_in_catalog', 'trait_eqtls', 'pval']
-        probs_df = pd.DataFrame(probs_df, columns=probs_cols)
+        probs_df = pd.DataFrame(probs_df, columns=cols)
         probs_res.append(probs_df)
         try:
             probs_df['adj_pval'] = mt.multipletests(probs_df['pval'], method='bonferroni')[1]
@@ -109,10 +108,11 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
         probs_res = pd.concat(probs_res)
         write_results(probs_res, 'enrichment.txt',  out)
     if len(sig_res) == 0:
-        return
-    sig_res = pd.concat(sig_res)
-    if not bootstrap:
-        write_results(sig_res, 'significant_enrichment.txt',  out)
+        sig_res = pd.DataFrame(columns=cols)
+    else:
+        sig_res = pd.concat(sig_res)
+    #if not bootstrap:
+    write_results(sig_res, 'significant_enrichment.txt',  out)
     return sig_res
 
 def write_results(res, fp, out):
