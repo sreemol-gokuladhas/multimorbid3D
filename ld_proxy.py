@@ -38,6 +38,8 @@ def ld_proxy_chrom(chrom, query_snps, corr_thresh, window, pop, ld_dir):
         return 
     snps = pd.concat(snps)
     snps = snps[(abs(snps['posq']-snps['post']) <= window)]
+    if snps.empty:
+        return
     snps.loc[:, 'chromt_post'] = snps['chromt'].astype(str)  + '_' + snps['post'].astype(str) 
     res = snps[['rsidt', 'chromt_post']]
     res = pd.DataFrame(res['rsidt'].str.split(';').tolist(), index=res['chromt_post']).stack()
