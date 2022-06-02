@@ -63,7 +63,7 @@ def find_disease(gwas, ppin_dir, out, ld, corr_thresh, window, population, ld_di
                 snps = ld_snps['rsidt'].drop_duplicates().tolist()
                 df = (df.merge(ld_snps, left_on='snp', right_on='rsidq')
                       .sort_values(by=['snp', 'gene', 'dprime'])
-                      .drop_duplicates(subset=['snp', 'gene', 'dprime']))
+                      .drop_duplicates(subset=['snp', 'rsidt', 'gene', 'dprime']))
                 write_results(df,  f'{level}_snp_gene.txt', out)
         overlap = gwas.loc[gwas['SNPS'].isin(snps)].drop_duplicates()
         # Total level eQTLs that are in the GWAS Catalog. 
