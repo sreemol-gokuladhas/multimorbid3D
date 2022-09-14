@@ -1,6 +1,6 @@
 # Multimorbid3D
 
-Predict multimorbid conditions of a disease
+This repository contains scripts used to predict statistically significant co-occurring diseases/conditions ([GWAS catalog](https://www.ebi.ac.uk/gwas/) of a disease of interest.
 
 ## Installation
 
@@ -9,29 +9,46 @@ Clone the repository using the following command:
 ```
 https://github.com/Genome3d/multimorbid3D.git
 cd multimorbid3D
-
 ```
 
 ## Setup
+
+Ensure that you have [conda](https://docs.conda.io/en/latest/) installed. In this example, environment is created in the multimorbid3D directory.
 
 1. Create a conda environment from [environment.yaml](https://github.com/Genome3d/multimorbid3D/blob/main/environment.yaml) file
 
 ```
 conda env create --prefix ./multimorbid3D --file environment.yaml
-
 ```
 
 2. Activate the environment 
 
 ```
 conda activate multimorbid3D/
-
 ```
 
-## Usage
+3. Deactivate the environment after usage
 
 ```
-(/mnt/projects/multimorbid3D/env) sgok603@liggen3dprd03:/mnt/projects/multimorbid3D$ python comorbid.py -h
+conda deactivate 
+```
+
+## Required datasets
+
+* Input: a list of SNPs or genes or a trait
+
+* Gene regulatory network (GRN). It is a collection of regulatory interactions between SNPs and genes (can be build using [CoDeS3D pipeline](https://github.com/Genome3d/codes3d-v2)
+
+* To also include linked SNPs in the analysis: re-calculated linkage disequilibrium data for all the SNPs in [1000 genome project](https://www.internationalgenome.org/)
+
+* To use protein-protein interactions from [PROPER](https://genemo.ucsd.edu/proper/), download the database [here](https://genemo.ucsd.edu/proper/)
+
+## Basic usage
+
+For details on the expected inputs, run the `comorbid.py` script with `-h` argument as shown below
+ 
+```
+(/m/p/u/s/multimorbid3D/multimorbid3D) :/mnt/projects/multimorbid3D$ python comorbid.py -h
 usage: comorbid.py [-h] [-g GENES [GENES ...]] [-s SNPS [SNPS ...]] [--trait TRAIT] [--pmid PMID] --grn-dir GRN_DIR [--gwas GWAS] -o OUTPUT_DIR [-l LEVELS] [-p {string,proper} [{string,proper} ...]]
                    [--string-score STRING_SCORE] [--bootstrap] [--bootstraps BOOTSTRAPS] [--keep-bootstraps] [--non-spatial] [--non-spatial-dir NON_SPATIAL_DIR] [--snp-ref-dir SNP_REF_DIR]
                    [--gene-ref-dir GENE_REF_DIR] [--ld] [-c CORRELATION_THRESHOLD] [-w WINDOW] [--population {EUR}] [--ld-dir LD_DIR]
