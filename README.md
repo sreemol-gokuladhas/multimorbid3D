@@ -1,6 +1,6 @@
 # Multimorbid3D
 
-This repository contains scripts used to predict statistically significant co-occurring diseases/conditions ([GWAS catalog](https://www.ebi.ac.uk/gwas/) of a disease of interest.
+This repository contains scripts used to predict statistically significant co-occurring diseases/conditions (in [GWAS catalog](https://www.ebi.ac.uk/gwas/)) of a disease of interest.
 
 ## Installation
 
@@ -37,7 +37,7 @@ conda deactivate
 
 * Input: a list of SNPs or genes or a trait
 
-* Gene regulatory network (GRN). It is a collection of regulatory interactions between SNPs and genes (can be build using [CoDeS3D pipeline](https://github.com/Genome3d/codes3d-v2)
+* Gene regulatory network (GRN). It is a collection of regulatory interactions between SNPs and genes (can be build using [CoDeS3D pipeline](https://github.com/Genome3d/codes3d-v2))
 
 * To also include linked SNPs in the analysis: re-calculated linkage disequilibrium data for all the SNPs in [1000 genome project](https://www.internationalgenome.org/)
 
