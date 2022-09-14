@@ -41,7 +41,7 @@ conda deactivate
 
 * To also include linked SNPs in the analysis: pre-calculated pairwise linkage disequilibrium data for all the SNPs in [1000 genome project](https://www.internationalgenome.org/)
 
-* To use protein-protein interactions from [PROPER](https://genemo.ucsd.edu/proper/), download the database [here](https://genemo.ucsd.edu/proper/)
+* To use protein-protein interactions from [PROPER](https://genemo.ucsd.edu/proper/), download the database from the website
 
 ## Basic usage
 
