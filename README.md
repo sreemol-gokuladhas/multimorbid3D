@@ -39,7 +39,7 @@ conda deactivate
 
 * Gene regulatory network (GRN). It is a collection of regulatory interactions between SNPs and genes (can be build using [CoDeS3D pipeline](https://github.com/Genome3d/codes3d-v2))
 
-* To also include linked SNPs in the analysis: re-calculated linkage disequilibrium data for all the SNPs in [1000 genome project](https://www.internationalgenome.org/)
+* To also include linked SNPs in the analysis: pre-calculated pairwise linkage disequilibrium data for all the SNPs in [1000 genome project](https://www.internationalgenome.org/)
 
 * To use protein-protein interactions from [PROPER](https://genemo.ucsd.edu/proper/), download the database [here](https://genemo.ucsd.edu/proper/)
 
